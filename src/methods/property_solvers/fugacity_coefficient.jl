@@ -8,7 +8,7 @@ function lnϕ(model::EoSModel, p, T, z=SA[1.],cache = nothing;
     RT = Rgas(model)*T
     logZ = log(p*vol/RT/sum(z))
     nc = length(z)
-    
+
     if cache isa Vector
         return lnϕ!(cache, model, p, T, z; vol)
     elseif cache isa Tuple
@@ -35,7 +35,7 @@ function lnϕ(model::EoSModel, p, T, z=SA[1.],cache = nothing;
         else
             lnϕ = μ_res/RT .- logZ
         end
-        
+
     end
     return lnϕ, vol
 end
@@ -115,9 +115,10 @@ function VT_∑zlogϕ(model,V,T,z)
     RT = Rgas(model)*T
     n = sum(z)
     A, ∂A∂V, ∂A∂T = ∂f_res_vec(model,V,T,z)
-    PrV = ifelse(iszero(1/V),zero(∂A∂V),- V*∂A∂V)
+    Pr = -∂A∂V
+    PrV = ifelse(iszero(1/V),zero(∂A∂V),Pr*V)
     g_res = A + PrV
-    logZ = log1p(∂A∂V*V/(n*RT))
+    logZ = log1p(Pr*V/(n*RT))
     ∑zlogϕi = g_res/RT - n*logZ
     return ∑zlogϕi
 end
@@ -167,7 +168,7 @@ function ∂lnϕ∂n∂P(model::EoSModel, p, T, z=SA[1.], cache = ∂lnϕ_cache(
     F_res(model, V, T, z) = eos_res(model, V, T, z) / RT
     fun(aux) = F_res(model, aux[1], T, @view(aux[2:(ncomponents+1)]))
 
-    
+
     aux[1] = V
     aux[2:end] = z
     result = ForwardDiff.hessian!(result, fun, aux, hconfig, Val{false}())
@@ -345,14 +346,18 @@ function modified_lnϕ(model, p, T, z, cache; phase = :unknown, vol0 = nothing)
     return lnϕz,vz
 end
 
-function modified_gibbs(model,p,T,w,phase = :unknown,vol = NaN)
-    if isnan(vol)
+modified_gibbs(model,p,T,w) = modified_gibbs(model,p,T,w,:unknown,oftype(zero(Base.promote_eltype(model,p,T,w)),NaN))
+modified_gibbs(model,p,T,w,phase) = modified_gibbs(model,p,T,w,phase,oftype(zero(Base.promote_eltype(model,p,T,w)),NaN))
+
+function modified_gibbs(model,p,T,w,phase,vol)
+    if isnan(vol) || isnothing(vol)
         volw = volume(model,p,T,w,phase = phase)
     else
         volw = vol
     end
-    g =  VT_gibbs_energy(model,volw,T,w,p) #+ eos_g(BasicIdeal(),p,T,w)
-    return g,volw
+    RT = Rgas(model)*T
+    g = PT_property(model,p,T,w,phase,volw,VT_gibbs_energy)
+    return g/RT,volw
 end
 
 function modified_∂lnϕ∂n(model, p, T, z, cache; phase = :unknown, vol0 = nothing)

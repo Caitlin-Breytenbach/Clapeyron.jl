@@ -2,6 +2,8 @@ function bubble_point(model::EoSModel,T,x)
     return 1,1
 end
 
+function ff_582 end
+
 @testset "estimation" begin
     model = SAFTgammaMie(["ethanol","water"],epsilon_mixing = :hudsen_mccoubrey)
     
@@ -78,4 +80,17 @@ end
     Clapeyron.recombine!(model2)
     k2 = model2.params.mixed_segment.values.v
     @test k1[1] == k2[1] # Test that the first value is unchanged
+
+    #issue 582
+
+    csv1 = """Clapeyron Estimator,,,
+       {"method" : "ff_582","species" : ["acetonitrile","heptane","palmitic acid"]},,
+       T,z1,z2,z3,out_x1,out_x2,out_x3,out_y1,out_y2,out_y3"""
+
+
+    species_582 = Clapeyron.EstimationData([csv1])[1].species
+    @test species_582 == ["acetonitrile","heptane","palmitic acid"]
 end
+
+
+#Estimation(model,deepcopy(model),Clapeyron.ToEstimate(toestimate_582),[:puremodel],Clapeyron.__mse)
