@@ -97,7 +97,7 @@ function Base.show(io::IO,mime::MIME"text/plain",wrapper::PTFlashWrapper)
     show_reference_state(io,model;space = true)
 end
 
-function saturation_pressure_ad2(result,model,T)
+function saturation_pressure_ad2(result,model::M,T::TT) where {M,TT}
     return saturation_pressure_ad(result,(model,T),(model,primalval(T)))
 end
 
@@ -121,7 +121,7 @@ function modified_lnϕ_pure(wrapper::PTFlashWrapper,p,T,i;phase = :unknown)
         vv = volume(gasmodel,p,T,phase = :v)
         lnϕv = VT_lnϕ_pure(gasmodel,vv,T,p)
         Δd = log(ps/p)
-        is_idealmodel(gas_model) || (Δd += vl*(p - ps)/RT + lnϕsat)
+        is_idealmodel(gasmodel) || (Δd += vl*(p - ps)/RT + lnϕsat)
         return lnϕv - Δd
     else
         return zero(Base.promote_eltype(wrapper,p,T))
