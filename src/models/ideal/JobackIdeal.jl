@@ -168,7 +168,8 @@ function recombine_impl!(model::JobackIdeal)
         _b = ∑(b[j]*ni[j] for j in i_groups[i]) + 0.210
         _c = ∑(c[j]*ni[j] for j in i_groups[i]) - 3.91e-4
         _d = ∑(d[j]*ni[j] for j in i_groups[i]) + 2.06e-7
-        coeffs[i] = (_a,_b,_c,_d)
+        _e = 0.0
+        coeffs[i] = (_a,_b,_c,_d,_e)
     end
     return model
 end
