@@ -82,7 +82,7 @@ function saturation_pressure(model::EoSModel,T,V0::Union{Tuple,Vector})
     return saturation_pressure(model,T,method)
 end
 
-function saturation_pressure_ad(result,tup,tup_primal)
+function saturation_pressure_ad(result::RES,tup::TUP1,tup_primal::TUP2) where {RES,TUP1,TUP2}
     if any(has_dual,tup) # do check here to avoid recomputation of pressure if no AD
         ff(x,tups) = begin
             model,T = tups
