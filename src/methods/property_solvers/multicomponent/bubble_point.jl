@@ -445,8 +445,7 @@ function bubble_pressure(model::EoSModel, T, x::AbstractVector, method::Thermody
     _model_r,idx_r = index_reduction(model,x)
     if length(_model_r)==1 && !is_pseudo_pure(model)
         (P_sat,v_l,v_v) = saturation_pressure(_model_r,T)
-        y = [one(eltype(x))]
-        return (P_sat,v_l,v_v,y)
+        return (P_sat,v_l,v_v,Vector{eltype(x)}(x))
     end
     x_r = x[idx_r]
     model_r = __tpflash_cache_model(_model_r,NaN,T,x,:vle)
@@ -647,8 +646,7 @@ function bubble_temperature(model::EoSModel, p, x::AbstractVector, method::Therm
     _model_r,idx_r = index_reduction(model,x)
     if length(_model_r) == 1 && !is_pseudo_pure(model)
         (T_sat,v_l,v_v) = saturation_temperature(_model_r,p)
-        y = [one(eltype(x))]
-        return (T_sat,v_l,v_v,y)
+        return (T_sat,v_l,v_v,Vector{eltype(x)}(x))
     end
     x_r = x[idx_r]
     model_r = __tpflash_cache_model(_model_r,p,NaN,x,:vle)
