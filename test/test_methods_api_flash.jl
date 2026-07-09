@@ -1010,6 +1010,7 @@ end
     end
 
     @testset "bubble/dew type stability" begin
+        admodel = cPR(["R134a","propane"])
         @test @inferred(bubble_pressure(admodel, 300., [0.5, 0.5])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
         @test @inferred(bubble_temperature(admodel, 300., [1.,0.])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
         @test @inferred(dew_pressure(admodel, 300., [0.,1.])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
