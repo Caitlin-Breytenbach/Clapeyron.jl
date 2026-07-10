@@ -9,23 +9,13 @@ and must implement their core interface methods.
 
 By default, `EoSModel` subtypes are considered to be helmholtz-based EoS, and as such, they must implement their core interface methods:
 
-- [`a_res`](@ref): An implementation of the reduced residual Helmholtz energy
-- [`lb_volume`](@ref): Lower bound volume for the equation of state
+- [`a_res`](@ref): An implementation of the reduced residual Helmholtz energy.
+- [`lb_volume`](@ref): Lower bound volume for the equation of state.
 - [`T_scale`](@ref): A temperature scaling factor.
 
 Other `EoSModel` subtypes may have other interfaces (like activity models or volume-based models).
 """
 abstract type EoSModel end
-
-function eos_impl(model::EoSModel,V,T,z)
-    return Rgas(model)*sum(z)*T*a_eos(model,V,T,z) + reference_state_eval(model,V,T,z)
-end
-
-function a_eos(model::EoSModel, V, T, z=SA[1.0])
-    maybe_ideal = idealmodel(model)
-    ideal = maybe_ideal !== nothing ? maybe_ideal : model
-    return a_ideal(ideal,V,T,z) + a_res(model,V,T,z)
-end
 
 """
     Rgas(model)
@@ -33,11 +23,12 @@ end
 
 Returns the gas constant used by an `EoSModel`.
 
-By default, uses the current 2019 definition: `R̄` = 8.31446261815324 [J⋅K⁻¹⋅mol⁻¹]. you can call `Rgas()` to obtain this value.
+By default, uses the current 2019 definition: `R̄` = 8.31446261815324 [J⋅K⁻¹⋅mol⁻¹]. You can call `Rgas()` to obtain this value.
 
 """
-Rgas(model) = R̄
-Rgas() = R̄
+@inline Rgas(model) = Constants.R̄(eltype(model))
+Rgas() = Constants.R̄(Float64)
+
 
 """
     eos(model::EoSModel, V, T, z=SA[1.0])
@@ -61,21 +52,38 @@ end
 
 eos(model::EoSModel, V, T, z::Number) = eos(model, V, T, SA[z])
 
+function eos_impl(model::EoSModel,V,T,z)
+    return Rgas(model)*sum(z)*T*a_eos(model,V,T,z) + reference_state_eval(model,V,T,z)
+end
+
+function a_eos(model::EoSModel, V, T, z=SA[1.0])
+    maybe_ideal = idealmodel(model)
+    ideal = maybe_ideal !== nothing ? maybe_ideal : model
+    return a_ideal(ideal,V,T,z) + a_res(model,V,T,z)
+end
 """
     idealmodel(model::EoSModel)
 
-Retrieves the ideal model from the input's model. If the model is already an idealmodel, return `nothing`
+Retrieves the ideal model from the input's model. If the model is already an idealmodel, return the same model. If the model has no ideal model stored, return nothing.
 # Examples:
 ```julia-repl
 julia> pr = PR(["water"],idealmodel = MonomerIdeal)
 PR{MonomerIdeal, PRAlpha, NoTranslation, vdW1fRule} with 1 component:
  "water"
 Contains parameters: a, b, Tc, Pc, Mw
-julia> ideal = idealmodel(pr)
+
+julia> ideal = Clapeyron.idealmodel(pr)
 MonomerIdeal with 1 component:
  "water"
-Contains parameters: Mw
-julia> idealmodel(ideal) == nothing
+Contains parameters: Mw, reference_state
+
+julia> ideal == Clapeyron.idealmodel(pr)
+true
+
+julia> ideal == Clapeyron.idealmodel(ideal)
+true
+
+julia> Clapeyron.idealmodel(pr.mixing) == nothing
 true
 ```
 """
@@ -88,6 +96,20 @@ idealmodel(model::EoSModel) = __idealmodel(model::EoSModel)
         return :(nothing)
     end
 end
+
+"""
+    is_idealmodel(model)::Bool
+
+Returns a boolean, indicating if the input model is considered an ideal model.
+By default, is defined in terms of [`idealmodel`](@ref).
+"""
+@inline is_idealmodel(model::M) where M = __is_idealmodel(M,idealmodel(model))
+
+@inline __is_idealmodel(::Type{M1},::Nothing) where {M1} = false
+@inline __is_idealmodel(::Type{M1},::Type{T}) where {M1,T}= false
+@inline __is_idealmodel(::Type{M1},::Type{M1}) where {M1} = true
+@inline __is_idealmodel(::Type{M1},x::T) where {M1,T} = __is_idealmodel(M1,T) 
+@inline __is_idealmodel(::Type{Nothing},::Type{Nothing}) = false #edge case, but better be sure
 
 """
     eos_res(model::EoSModel, V, T, z=SA[1.0])
@@ -221,7 +243,7 @@ function has_dual(x::NTuple{N,<:Any}) where N
 end
 """
     doi(model)
-Returns a Vector of strings containing the top-level bibliographic references of the model, in DOI format. if there isn't a `references` field, it defaults to `default_references(model)`
+Returns a Vector of strings containing the top-level bibliographic references of the model, in DOI format. If there isn't a `references` field, it defaults to `default_references(model)`.
 ```julia-repl
 julia> umr = UMRPR(["water"],idealmodel = WalkerIdeal);Clapeyron.doi(umr)
 1-element Vector{String}:
@@ -248,7 +270,7 @@ default_references(M) = String[]
 """
     cite(model,out = :doi)
 
-Returns a Vector of strings containing all bibliographic references of the model, in the format indicated by the `out` argument. this includes any nested models.
+Returns a Vector of strings containing all bibliographic references of the model, in the format indicated by the `out` argument. This includes any nested models.
 
 ```julia-repl
 julia> umr = UMRPR(["water"],idealmodel = WalkerIdeal);Clapeyron.cite(umr) #should cite UMRPR, UNIFAC, WalkerIdeal
@@ -258,9 +280,9 @@ julia> umr = UMRPR(["water"],idealmodel = WalkerIdeal);Clapeyron.cite(umr) #shou
  "10.1021/i260064a004"
  "10.1021/acs.jced.0c00723"
 ```
-the `out` argument supports two values:
-- `:doi`: returns the stored values on each EoS. by default those are DOI identifiers.
-- `:bib`: returns BibTeX entries. to use this, an internet connection is required.
+The `out` argument supports two values:
+- `:doi`: returns the stored values on each EoS. By default those are DOI identifiers.
+- `:bib`: returns BibTeX entries. To use this, an internet connection is required.
 
 ```julia-repl
 julia> model = SAFTVRQMie(["helium"])
@@ -274,7 +296,7 @@ julia> Clapeyron.cite(model,:bib)
  "@article{Aasen_2020,\n\tdoi = {10" ⋯ 452 bytes ⋯ "Journal of Chemical Physics}\n}"
 ```
 
-This list will displayed by each `EoSModel` on future versions. you can enable/disable this by setting `ENV["CLAPEYRON_SHOW_REFERENCES"] = "TRUE"/"FALSE"`
+This list will displayed by each `EoSModel` on future versions. You can enable/disable this by setting `ENV["CLAPEYRON_SHOW_REFERENCES"] = "TRUE"/"FALSE"`.
 """
 function cite(model::EoSModel,out = :doi)
     keys = fieldnames(typeof(model))
@@ -314,4 +336,5 @@ end
 is_pseudo_pure(model) = false
 is_electrolyte(model) = false
 
-export EoSModel, eos, has_groups, has_sites, Rgas
+export EoSModel, eos, has_groups, has_sites, Rgas, eos_res
+@public a_res, component_list, is_idealmodel

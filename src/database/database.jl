@@ -20,7 +20,7 @@ if `return_sites` is set to true, `getparams` will add a "sites" value in the pa
 
 ## Single to Pair promotion
 
-When reading multiple CSVs, if a parameter name appears in a single paramter file and in a pair parameter file, the single parameter values will be promoted to be the diagonal values of the pair interaction matrix:
+When reading multiple CSVs, if a parameter's name appears in a single parameter file and in a pair parameter file, the single parameter values will be promoted to be the diagonal values of the pair interaction matrix:
 
 **`my_parameter_single.csv`**
 ```
@@ -49,7 +49,7 @@ julia> res["a"].values
  1000  875
   875  700
 ```
-This promotion fails only happens in Single-Pair combinations. It fails otherwise.
+This promotion is only supported for Single-Pair combinations. Other CSV type combinations will fail.
 
 ## In-memory CSV parsing
 
@@ -72,20 +72,20 @@ Dict{String, Clapeyron.ClapeyronParam} with 2 entries:
 
 There are some special prefixes that are used by the parser to signal some specific behaviour to be done at parsing time, for one CSV or a group of them:
 - `@DB`: replaces the path by the current Clapeyron default database. When doing `getparams(components,["location"])`, the paths are lowered to `getparams(components,userlocations = ["@DB/location"])`.
-In a way, is a path shortcut used internally by Clapeyron to parse it's own database. you can change the path where `@DB` points to (or add other path shortcuts), via adding a corresponding entry to the `Clapeyron.SHORT_PATHS` Dict.
+In a way, is a path shortcut used internally by Clapeyron to parse it's own database. You can change the path where `@DB` points to (or add other path shortcuts), via adding a corresponding entry to the `Clapeyron.SHORT_PATHS` Dict.
 - `@REPLACE`: Any filepath starting with `@REPLACE` will clear all previous appearances of the parameter names found in the CSV that contains the prefix.
-- `@REMOVEDEFAULTS`: it is used alone, and needs to be passed at the first position of the vector of `userlocations`. it will skip parsing of the default parameters:
+- `@REMOVEDEFAULTS`: it is used alone, and needs to be passed at the first position of the vector of `userlocations`. It will skip parsing of the default parameters:
 
-The effect of the the parser can be summarized by the following examples:
+The effect of the parser can be summarized by the following examples:
 
 ```
 model = PCSAFT(["water"],userlocations = ["@REMOVEDEFAULTS"]) #fails, no parameters found, no CSV parsed
 model = PCSAFT(["water"],userlocations = ["@REPLACE/empty_params.csv"]) #fails, no parameters found, default parameters parsed and then removed
 model = PCSAFT(["water"],userlocations = ["@REPLACE/my_pcsaft_kij.csv"]) #success, default kij parameters replaced by the ones on `my_pcsaft_kij.csv`
-model = PCSAFT(["water"],userlocations = ["@REMOVEDEFAULTS","@DB/SAFT/PCSAFT","@DB/properties/molarmass.csv"]) #sucess. default parameters csv removed, and parsed again, using the @DB prefix to point to the default database.
+model = PCSAFT(["water"],userlocations = ["@REMOVEDEFAULTS","@DB/SAFT/PCSAFT","@DB/properties/molarmass.csv"]) #sucess. Default parameters csv removed, and parsed again, using the @DB prefix to point to the default database.
 ```
 
-You can use the `@REPLACE` keyword in a in-memory CSV by adding it at the start of the string, followed by an space:
+You can use the `@REPLACE` keyword in an in-memory CSV by adding it at the start of the string, followed by a space:
 ```
 #This will replace all previous parsed occurences of `a` and `b`
 x_replace = \"\"\"@REPLACE Clapeyron Database File,
@@ -98,7 +98,7 @@ sp2,700,0.41
 
 ## CSV type detection and group type
 
-The second line of the csv is used for comments and to identify the type of CSV used. for example:
+The second line of the csv is used for comments and to identify the type of CSV used. For example:
 
     ```
 x = \"\"\"Clapeyron Database File
@@ -118,7 +118,7 @@ x = \"\"\"Clapeyron Database File
        sp2,700,0.41
        \"\"\"
 ```
-Additionaly, there are some cases when you want to absolutely sure that your types don't clash with the default values. This is the case with different group parametrizations of UNIFAC (Dormund, VTPR, PSRK):
+Additionaly, there are some cases when you want to be absolutely sure that your types don't clash with the default values. This is the case with different group parametrizations of UNIFAC (Dortmund, VTPR, PSRK):
 
 ```
 julia> model = UNIFAC(["methanol","ethanol"])
@@ -136,7 +136,7 @@ Group Type: PSRK
 Contains parameters: A, B, C, R, Q
 ```
 
-The models are the same (`UNIFAC`), but the group parametrizations are different. this is specified with the `grouptype` keyword. for example, if we see `UNIFAC_groups.csv`, it starts with:
+The models are the same (`UNIFAC`), but the group parametrizations are different. This is specified with the `grouptype` keyword. For example, if we see `UNIFAC_groups.csv`, it starts with:
 
 ```
 Clapeyron Database File,
@@ -152,7 +152,7 @@ For compatibility reasons, if you pass a CSV without grouptype, it will be accep
 
 ```
 x1 = \"\"\"Clapeyron Database File
-       paramterization 1 [csvtype = like,grouptype = param1]
+       parameterization 1 [csvtype = like,grouptype = param1]
        species,a,b
        sp1,1000,0.05
        sp2,700,0.41
@@ -165,7 +165,7 @@ x2 = \"\"\"Clapeyron Database File
        \"\"\"
 ```
 
-If we pass the same parameters, with different group types, the parser will fail
+If we pass the same parameters, with different group types, the parser will fail.
 
 ```julia-repl
 julia> Clapeyron.getparams(["sp1","sp2"],userlocations = [x1,x2])
@@ -190,7 +190,7 @@ function getparams(components,
                     return_sites::Bool = true,
                     component_delimiter = "~|~"
                     )
-    
+
     userlocations = normalize_userlocations(userlocations)
     asymmetricparams = normalize_userlocations(asymmetricparams)
     ignore_missing_singleparams = String.(ignore_missing_singleparams)
@@ -243,12 +243,12 @@ function buildsites(components,allparams,allnotfoundparams,options)
 
     #if we are asked to don't build sites, do nothing
     options.return_sites || return nothing
-    
+
     #if there aren't any assoc data files, return empty SiteParam
     assoc_data_found = any(x -> x.type == assocdata,values(allparams))
     assoc_data_notfound = any(x -> x == assocdata,values(allnotfoundparams))
     !assoc_data_found && !assoc_data_notfound && return nothing
-    
+
     #Find if there is any sites in the assoc files, do nothing if data not found
     anysites(allparams,components) || return SiteParam(components)
 
@@ -293,7 +293,7 @@ function buildsites(components,allparams,allnotfoundparams,options)
         if haskey(allparams,ki)
             csv_vi = allparams[ki].csv
             csv_vi != nothing && append!(sourcecsvs,csv_vi)
-            
+
             #remove single params used in sites, those were already consumed
             delete!(allparams,ki)
         end
@@ -425,7 +425,7 @@ function merge_allparams!(allparams,allnotfoundparams,foundparams,notfoundparams
         allnotfoundparams[kk] = vv
     end
 
-    if _replace #if the paramter is not found, that means that we want to erase that param.
+    if _replace #if the parameter is not found, that means that we want to erase that param.
         for (kk,vv) ∈ pairs(notfoundparams)
             delete!(allparams,kk)
         end
@@ -552,7 +552,7 @@ function read_csv(filepath,options::ParamOptions,sep = :auto)::CSV.File
         _delim = sep
     end
     if is_inline_csv(filepath)
-        df = CSV.File(IOBuffer(filepath); header=3, pool=0,silencewarnings=true,drop = _drop, stringtype = String, delim = _delim, ntasks  = 1,buffer_in_memory = true)
+        df = CSV.File(IOBuffer(filepath); header=3, pool=0,normalizenames=true, silencewarnings=true,drop = _drop, stringtype = String, delim = _delim, ntasks  = 1,buffer_in_memory = true)
     else
         df = CSV.File(filepath; header=3, pool=0,silencewarnings=true,drop = _drop, stringtype = String,delim = _delim, ntasks  = 1)
     end
@@ -865,7 +865,8 @@ function __verbose_findparams_found(foundvalues)
     end
 end
 
-const readcsvtype_keywords  = ["like", "single", "unlike", "pair", "assoc", "association", "group", "groups","intragroup","intragroups"]
+const READCSVTYPE_KEYWORDS  = Set(["like", "single", "unlike", "pair", "assoc", "association", "group", "groups","intragroup","intragroups"])
+
 
 function read_csv_options(filepath::AbstractString)
     return _read_csv_options(getline(String(filepath), 2))
@@ -876,26 +877,38 @@ function read_csv_options(filepath)
 end=#
 
 function _read_csv_options(line::String)
-    re = r"\[.*\]"
-    maybe_opts = match(re,line)
+    vec_re = r"\[.*\]"
+    maybe_opts_vec = match(vec_re,line)
+    json_re = r"\{.*\}"
+    maybe_opts_json = match(json_re,line)
 
     # Searches for type from second line of CSV.
-    has_csv_options = !isnothing(maybe_opts)
-    if has_csv_options
-        opts = chop(maybe_opts.match,head = 1,tail = 1)
-        return __get_options(opts)
+    has_csv_options_vec = !isnothing(maybe_opts_vec)
+    has_csv_options_json = !isnothing(maybe_opts_json)
+    if has_csv_options_json
+        __get_options(maybe_opts_json.match,:json)
+    elseif has_csv_options_vec
+        opts = chop(maybe_opts_vec.match,head = 1,tail = 1)
+        return __get_options(opts,:vec)
     else
-        keywords = readcsvtype_keywords
+        data = [""]
         words = split(lowercase(strip(line, ',')), ' ')
-        foundkeywords = intersect(words, keywords)
-        _species = intersect(words,["species"])
-        _estimator = intersect(words,["method"])
-        return (csvtype = _readcsvtype(foundkeywords),grouptype = :unknown,estimator = _estimator, species = _species,sep = :comma)
+
+        maybe_csvdata = false
+        for word in words
+            if word in READCSVTYPE_KEYWORDS && maybe_csvdata == false
+                maybe_csvdata = true
+                data[1] = word
+            elseif word in READCSVTYPE_KEYWORDS && maybe_csvdata == true
+                data[1] = ""
+            end
+        end
+        return (csvtype = _readcsvtype(data[1]),grouptype = :unknown, sep = :comma)
     end
 end
 
-const NT_CSV_OPTIONS = (csvtype = namedtupledata,grouptype = :unknown,estimator = :no_estimator, species = ["all"],sep = :comma)
-+
+const NT_CSV_OPTIONS = (csvtype = namedtupledata,grouptype = :unknown,sep = :comma)
+
 function _readcsvtype(collection)
     length(collection) != 1 && return invaliddata
     key = only(collection)
@@ -916,20 +929,170 @@ function _readcsvtype(key::AbstractString)
     return invaliddata
 end
 
-function __get_options(data)
-    opts = eachsplit(data,',')
-    opts_dict = Dict{String,String}()
-    for opt in opts
-        k,v = _parse_kv(opt,"=")
-        opts_dict[k] = v
+"""
+    parse_bracket_format(s) -> Dict{SubString{String}, Tuple{Bool,SubString{String}}}
+
+Parse a bracket-encoded key-value string. Used in Clapeyron.jl CSV file headers.
+returns a dictionary of key-value pairs. each value is a tuple of a boolean that indicates if the text is a vector of values
+and the text content. parsing of vectors is optional.
+"""
+function parse_bracket_format(s::AbstractString,brackets_removed = false)
+    if !brackets_removed
+        s = strip(s)
+        m = match(r"^\[(.*)\]$"s, s)          # regex: strip outer []
+        m === nothing && throw(ArgumentError("Input must be enclosed in '[…]': $(repr(s))"))
+        content = strip(m[1])
+    else
+        content = s
     end
-    _csvtype = _readcsvtype(get(opts_dict,"csvtype","invalid"))
-    _grouptype = Symbol(get(opts_dict,"grouptype","unknown"))
-    _estimator = Symbol(get(opts_dict,"method","error"))
-    _estimator = Symbol(get(opts_dict,"method","error"))
-    _species = String.(split(get(opts_dict,"species","all")," "))
-    _sep = Symbol(get(opts_dict,"sep","comma"))
-    return (csvtype = _csvtype,grouptype = _grouptype,estimator = _estimator, species = _species, sep = _sep)
+    isempty(content) && return Dict{String, Union{String, Vector{String}}}()
+
+
+    result = Dict{SubString{String}, Tuple{Bool,SubString{String}}}()
+    seg_start = firstindex(s)
+    done = false
+    while !done
+        add,idx,seg_start,done = _split_pairs(content,seg_start)
+        if add
+            ss = strip(SubString(content,idx))
+            k,v = _parse_pair(ss)
+            result[k] = v
+        end
+    end
+    return result
+end
+
+"""
+    _split_pairs(s) -> Vector{String}
+
+Split the flat content string into individual "key=value" segments, considering quotes and whitespace.
+
+"""
+function _split_pairs(s::AbstractString,seg_start)
+    in_q  = false
+    depth = 0
+    for i in seg_start:lastindex(s)
+        c = s[i]
+        if in_q
+            c == '"' && (in_q = false)
+        else
+            if     c == '"';                in_q  = true
+            elseif c == '(';               depth += 1
+            elseif c == ')';               depth -= 1
+            elseif c == ',' && depth == 0
+                indices0 = seg_start:prevind(s, i)
+                seg = strip(SubString(s,indices0))
+                if !all(isspace,seg)
+                    return true,indices0,nextind(s, i),false
+                end
+            end
+        end
+    end
+
+    indices_end = seg_start:lastindex(s)
+    tail = strip(SubString(s,indices_end))
+    if !all(isspace,tail)
+        return true,indices_end,0,true
+    else
+        return false,indices_end,0,true
+    end
+end
+
+"""
+    _parse_pair(s) -> (key::SubString{String}, Tuple{Bool,SubString{String}})
+
+Split one "key = value" segment at the first '=' that is not inside a quoted
+string or a parenthesised group.
+"""
+function _parse_pair(s::AbstractString)
+    in_q  = false
+    depth = 0
+    eq_i  = nothing
+
+    for i in eachindex(s)
+        c = s[i]
+        if in_q
+            c == '"' && (in_q = false)
+        else
+            if     c == '"';                in_q  = true
+            elseif c == '(';               depth += 1
+            elseif c == ')';               depth -= 1
+            elseif c == '=' && depth == 0; eq_i = i; break
+            end
+        end
+    end
+
+    eq_i === nothing && throw(ArgumentError("No '=' found in segment: $(repr(s))"))
+
+    key = strip(SubString(s,firstindex(s):prevind(s, eq_i)))
+    val = strip(SubString(s,nextind(s, eq_i):lastindex(s)))
+    count_quotes = count(isequal('\"'),val)
+    if startswith(val,'\"') && endswith(val,'\"') && count_quotes == 2
+        val = strip(isequal('\"'),val)
+    end
+    
+    is_vec = count_quotes > 2 || (startswith(val, '(') && endswith(val, ')'))
+    return key, (is_vec,val)
+end
+
+"""
+    _parse_vec(s) -> Vector{SubString{String}}
+
+Convert a string into a vector of strings acording to the following rules:
+- Each quoted value is an individual value, if there are more than 2 quotes present.
+- Text between parentheses is always a vector with one or more quoted strings
+- If no quotes and no parentheses are found, each word separated by whitespace is an individual value.
+"""
+function _parse_vec(s::AbstractString)
+    reg = r"\"([^\"]*)\""
+    # ── parenthesised list ─────────────────────────────────────────────────
+    if startswith(s, '(') && endswith(s, ')')
+        inner = SubString(s,nextind(s, firstindex(s)):prevind(s, lastindex(s)))
+        return [m[1] for m in eachmatch(reg, inner)]
+    end
+    # ── one or more quoted tokens ──────────────────────────────────────────
+    if count(isequal('\"'),s) > 2
+        return [m[1] for m in eachmatch(reg, s)]
+    end
+
+    #split by spaces
+    return split(s)
+end
+
+function __get_options(data,type)
+    if type == :vec
+        opts_dict = parse_bracket_format(data,true)
+        a,b,c = "csvtype","grouptype","sep"
+        _csvtype = if haskey(opts_dict,a)
+            _readcsvtype(opts_dict[SubString(a)][2])
+        else
+            invaliddata
+        end
+
+        _grouptype = if haskey(opts_dict,b)
+            Symbol(opts_dict[SubString(b)][2])
+        else
+            :unknown
+        end
+
+        _sep = if haskey(opts_dict,c)
+            Symbol(opts_dict[SubString(c)][2])
+        else
+            :comma
+        end
+        return (csvtype = _csvtype,grouptype = _grouptype,sep = _sep)
+    elseif type == :json
+        json_dict = JSON.parse(data)
+        _csvtype = _readcsvtype(get(json_dict,"csvtype","invalid"))
+        _grouptype = Symbol(get(json_dict,"grouptype","unknown"))
+        #_estimator = Symbol(get(json_dict,"method","error"))
+        #maybe_species = get(json_dict,"species","all")
+        #_species = maybe_species isa AbstractString ? [String(maybe_species)] : String.(maybe_species)
+        _sep = Symbol(get(json_dict,"sep","comma"))
+        return (csvtype = _csvtype,grouptype = _grouptype, sep = _sep)
+    else
+        throw(error("Clapeyron.__get_options: invalid type. expected :json or :vec, got $type"))
+    end
 end
 
 function valid_headerparams(csvheaders, options::ParamOptions = DefaultOptions)

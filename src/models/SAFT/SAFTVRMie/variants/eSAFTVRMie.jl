@@ -1,15 +1,3 @@
-abstract type eSAFTVRMieModel <: ESElectrolyteModel end
-
-struct eSAFTVRMie{T<:IdealModel,c<:EoSModel,i<:IonModel} <: eSAFTVRMieModel
-    components::Array{String,1}
-    icomponents::UnitRange{Int}
-    charge::Vector{Int64}
-    idealmodel::T
-    neutralmodel::c
-    ionmodel::i
-    references::Array{String,1}
-end
-
 """
     eSAFTVRMie(solvents::Array{String,1}, 
         ions::Array{String,1}; 
@@ -40,12 +28,8 @@ This function is used to create an eSAFTVRMie model which is a combination of th
 - `k`: Pair Parameter (`Float64`) (optional) - Binary Interaction Parameter (no units)
 - `epsilon_assoc`: Association Parameter (`Float64`) - Reduced association energy `[K]`
 - `bondvol`: Association Parameter (`Float64`) - Association Volume `[m³]`
-### Debye-Hückel Parameters
-- `sigma`: Single Parameter (`Float64`) - Diameter of closest approach `[m]`
-- `charge`: Single Parameter (`Float64`) - Charge `[-]`
-### Born Parameters
+### DHBorn Parameters
 - `sigma_born`: Single Parameter (`Float64`) - Born Diameter `[m]`
-- `charge`: Single Parameter (`Float64`) - Charge `[-]`
 
 ## Input models
 - `idealmodel`: Ideal Model

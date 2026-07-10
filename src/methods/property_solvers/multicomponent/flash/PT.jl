@@ -9,7 +9,7 @@ abstract type TPFlashMethod <: FlashMethod end
     tp_flash(model, p, T, n, method::TPFlashMethod = DETPFlash())
 
 Routine to solve non-reactive multicomponent flash problem.
-The default method uses Global Optimization. see [`DETPFlash`](@ref)
+The default method uses Global Optimization. See [`DETPFlash`](@ref)
 
 Inputs:
  - T, Temperature `[K]`
@@ -85,16 +85,18 @@ function tp_flash2(model::EoSModel, p, T, n,method::FlashMethod)
     if has_a_res(model)
         λmodel,λp,λT,λz = primalval(model_r),primalval(p),primalval(T),primalval(z_r)
         λresult = tp_flash_impl(λmodel,λp,λT,λz,method_r)
-        tup = (model,p,T,z_r)
-        λtup = (model_r,λp,λT,λz)
+        tup = (model_r,p,T,z_r)
+        λtup = (λmodel,λp,λT,λz)
         result = xy_flash_ad(λresult,tup,λtup,pressure,temperature)
     else
         result = tp_flash_impl(model_r,p,T,z_r,method_r)
     end
+    
     if !issorted(result.volumes)
         #this is in case we catch a bad result.
         result = FlashResult(result)
     end
+
     ∑β = sum(result.fractions)
     result.fractions ./= ∑β
     result.fractions .*= ∑n
@@ -120,8 +122,16 @@ function tp_flash2_to_tpflash(model,p,T,z,result)
 end
 
 function tp_flash_impl(model,p,T,z,method::GeneralizedXYFlash)
-    flash0 = px_flash_x0(model,p,T,z,temperature,method)
+    flash0 = pt_flash_x0(model,p,T,z,method)
     isone(numphases(flash0)) && return flash0
     spec = FlashSpecifications(pressure,p,temperature,T)
     return xy_flash(model,spec,z,flash0,method)
+end
+
+function tp_flash_impl(model,p,T,z,method::RRXYFlash)
+    modelx = __tpflash_cache_model(model,p,T,z,:vle)
+    flash0 = pt_flash_x0(modelx,p,T,z,method)
+    isone(numphases(flash0)) && return flash0
+    spec = FlashSpecifications(pressure,p,temperature,T)
+    return xy_flash(modelx,spec,z,flash0,method)
 end

@@ -35,12 +35,26 @@ function NLSolvers.NEqOptions(method::ThermodynamicMethod)
                     maxiter = method.max_iters)
 end
 
-mw(model::EoSModel) = model.params.Mw.values
+function mw(model::EoSModel) 
+    if has_groups(model)
+        return group_Mw(model)
+    else
+        return model.params.Mw.values
+    end
+end
 
-group_Mw(model::EoSModel) = group_Mw(model.params.Mw.values,model.groups)
+function get_verbosity(method::T) where T
+    if hasfield(T,:verbose)
+        return method.verbose
+    else
+        return false
+    end
+end
+
+group_Mw(model::EoSModel) = group_Mw(model.params.Mw,model.groups)
 function group_Mw(Mw_gc::SingleParam,groups::GroupParam)
     n = length(groups.components)
-    mw_comp = zeros(eltype(Mw_gc.values),n)
+    mw_comp = zeros(Base.promote_eltype(Mw_gc,groups),n)
     v = groups.n_flattenedgroups
     mw_gc = Mw_gc.values
     for i in 1:n
@@ -72,13 +86,14 @@ molecular_weight(mw::AbstractVector,z) = comp_molecular_weight(mw,z)
 molecular_weight(mw::SingleParam,z) = comp_molecular_weight(mw.values,z)
 
 function __molecular_weight(model,z)
-    MW = mw(model)
     if has_groups(model)
-        return group_molecular_weight(model.groups,MW,z)
+        return group_molecular_weight(model,z)
     else
-        return comp_molecular_weight(MW,z)
+        return comp_molecular_weight(mw(model),z)
     end
 end
+
+group_molecular_weight(model,z) = group_molecular_weight(model.groups,model.params.Mw.values,z)
 
 const LIQUID_STR = (:liquid,:LIQUID,:L,:l)
 
@@ -177,7 +192,7 @@ end
 """
     ∑(iterator)
 
-equivalent to `sum(iterator,init=0.0)`.
+Equivalent to `sum(iterator,init=0.0)`.
 
 """
 ∑(x) = sum(x,init = 0.0)
@@ -251,7 +266,7 @@ end =#
 Returns the preferred method for a combination of model and function, with the specified kwargs.
 
 """
-function init_preferred_method(method,model) end
+function init_preferred_method end
 
 """
     get_k(model)::VarArg{Matrix}
@@ -267,7 +282,7 @@ get_k(model::EoSModel) = nothing
 
 Returns a matrix of "l-values" binary interaction parameters used by the input `model`. Returns `nothing` if the model cannot return the l-values matrix.
 In the case of multiple l-values (as is the case in T-dependent values, i.e: l(T) = l1 + l2*T), it will return a tuple of matrices corresponding to each term in the l-value expression.
-Note that some models do not store the l-value matrix directly, but they contain the value in an indirect manner. for example, cubic EoS store `b[i,j] = f(b[i],b[j],l[i,j])`, where `f` depends on the mixing rule.
+Note that some models do not store the l-value matrix directly, but they contain the value in an indirect manner. For example, cubic EoS store `b[i,j] = f(b[i],b[j],l[i,j])`, where `f` depends on the mixing rule.
 """
 get_l(model::EoSModel) = nothing
 
@@ -311,6 +326,107 @@ function IGFormReferenceState(_components;userlocations = String[],H0 = nothing,
     return ref
 end
 
+"""
+    FixedEoSEval{X::Symbol}(f,data)
+
+a closure-like object specialized for EoSModels. The `X` parameter is a symbol representing which are the variables:
+
+## Examples
+```
+V = 0.04
+T = 300.0
+z = [0.2,0.8]
+model = BasicIdeal()
+p1 = FixedEoSEval{:V}(pressure,(model,T,z)) 
+p1(V) #pressure depending only on volume
+
+p2 = FixedEoSEval{:T}(pressure,(model,V,z)) 
+p(T) #pressure depending only on temperature
+
+p3 = FixedEoSEval{:VT}(pressure,(model,z))
+p3(V,T) #2-variable dependence
+p3((V,T)) #also a tuple or vector can be used
+
+p4 = FixedEoSEval{:Z}(pressure,(model,V,T))
+p4(z) #pressure depending only on composition
+```
+"""
+struct FixedEoSEval{X,F,D}
+    f::F
+    data::D
+end
+
+StaticForwardDiffTags.deferred_valtype(f::FixedEoSEval{X,F,D}) where {X,F,D} = Base.promote_eltype(f.data...)
+StaticForwardDiffTags.inner_function(f::FixedEoSEval{X,F,D}) where {X,F,D} = f.f
+
+FixedEoSEval{X}(f::F,data::T) where {X,F,T} = FixedEoSEval{X,F,T}(f,data)
+
+function (obj::FixedEoSEval{:V,F,D})(V) where {F,D}
+    model,T,z = obj.data
+    return obj.f(model,V,T,z)
+end
+
+function (obj::FixedEoSEval{:p,F,D})(p) where {F,D}
+    model,T,z = obj.data
+    return obj.f(model,p,T,z)
+end
+
+function (obj::FixedEoSEval{:rho,F,D})(rho) where {F,D}
+    model,T,z = obj.data
+    return obj.f(model,rho,T,z)
+end
+
+
+function (obj::FixedEoSEval{:T,F,D})(T) where {F,D}
+    model,V,z = obj.data
+    return obj.f(model,V,T,z)
+end
+
+function (obj::FixedEoSEval{:VT,F,D})(VT) where {F,D}
+    V,T = VT
+    model,z = obj.data
+    return obj.f(model,V,T,z)
+end
+
+function (obj::FixedEoSEval{:rhoT,F,D})(VT) where {F,D}
+    rho,T = VT
+    model,z = obj.data
+    return obj.f(model,rho,T,z)
+end
+
+(obj::FixedEoSEval{:VT,F,D})(V,T) where {F,D} = obj((V,T))
+(obj::FixedEoSEval{:rhoT,F,D})(rho,T) where {F,D} = obj((rho,T))
+
+
+function (obj::FixedEoSEval{:z,F,D})(z) where {F,D}
+    model,V,T = obj.data
+    return obj.f(model,V,T,z)
+end
+
+macro deferred_V(f,tag)
+    quote
+        WithContext(FixedEoSEval{:V}($f,(model,T,z)),∂Tag{$tag}())
+    end |> esc
+end
+
+macro deferred_T(f,tag)
+    quote
+        WithContext(FixedEoSEval{:T}($f,(model,V,z)),∂Tag{$tag}())
+    end |> esc
+end
+
+macro deferred_VT(f,tag)
+    quote
+        WithContext(FixedEoSEval{:VT}($f,(model,z)),∂Tag{$tag}())
+    end |> esc
+end
+
+macro deferred_Z(f,tag)
+    quote
+        WithContext(FixedEoSEval{:z}($f,(model,V,T)),∂Tag{$tag}())
+    end |> esc
+end
+
 #initial guesses for most methods
 include("initial_guess.jl")
 
@@ -339,3 +455,8 @@ include("XY_methods/QX.jl")
 
 export get_k,set_k!
 export get_l,set_l!
+
+@public ThermodynamicMethod
+@public is_vapour, is_liquid, is_solid, is_unknown
+@public is_lle, is_vle
+@public VT0, PT0, PT, VT, PS, PH, VT, TS, QT, QP

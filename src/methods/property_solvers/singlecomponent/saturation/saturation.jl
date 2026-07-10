@@ -41,7 +41,9 @@ function saturation_pressure(model::EoSModel,T,method::SaturationMethod)
     single_component_check(saturation_pressure,model)
     T = T*(T/T)*oneunit(eltype(model))
     satmodel = saturation_model(model)
-    satmodel !== model && saturation_pressure(satmodel,T,method)
+    if satmodel !== model
+        return saturation_pressure(satmodel, T, method)
+    end
     if has_a_res(model)
         λmodel,λT = primalval(model),primalval(T)
         λresult = saturation_pressure_impl(λmodel,λT,method)
@@ -82,7 +84,7 @@ function saturation_pressure(model::EoSModel,T,V0::Union{Tuple,Vector})
     return saturation_pressure(model,T,method)
 end
 
-function saturation_pressure_ad(result,tup,tup_primal)
+function saturation_pressure_ad(result::RES,tup::TUP1,tup_primal::TUP2) where {RES,TUP1,TUP2}
     if any(has_dual,tup) # do check here to avoid recomputation of pressure if no AD
         ff(x,tups) = begin
             model,T = tups
@@ -147,7 +149,7 @@ end
 function saturation_temperature(model,p,method::SaturationMethod)
     satmodel = saturation_model(model)
     if satmodel !== model
-        return saturation_temperature(satmodel,p;method)
+        return saturation_temperature(satmodel,p,method)
     end
     single_component_check(crit_pure,model)
     p = p*p/p
@@ -171,11 +173,11 @@ function saturation_temperature(model::EoSModel, p, T0::Number)
     saturation_temperature(model,p,method)
 end
 
-function saturation_temperature_ad(result,tup,tup_primal)    
+function saturation_temperature_ad(result,tup,tup_primal)
     f(x,tups) = begin
         model,p = tups
         T,vl,vv = x
-        return μp_equality1_T(model,model,vl,vv,p,T,1.0,1.0)
+        return μp_equality1_T(model,model,vl,vv,p,T,1.0,1.0,SA[1.0])
     end
     λx = SVector(result)
     ∂T,∂vl,∂vv = __gradients_for_root_finders(λx,tup,tup_primal,f)

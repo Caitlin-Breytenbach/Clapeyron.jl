@@ -21,13 +21,17 @@ struct ABCCubicParam <: EoSParam
     Mw::SingleParam{Float64}
 end
 
+struct SimpleAlphaParam <: EoSParam
+    acentricfactor::SingleParam{Float64}
+end
+
 const ONLY_VC = vcat(IGNORE_HEADERS,["Tc","Pc", "w"])
 const ONLY_ACENTRICFACTOR = vcat(IGNORE_HEADERS,["Tc", "Pc", "Vc"])
 """
     ab_premixing(model,mixing,kij = nothing,lij = nothing)
 
 Given a model::CubicModel, that has `a::PairParam`, `b::PairParam`, a mixing::MixingRule and `kij`,`lij` matrices, `ab_premixing` will perform an implace calculation
-to obtain the values of `a` and `b`, containing values aᵢⱼ and bᵢⱼ. by default, it performs the Van der Waals One-Fluid mixing rule. that is:
+to obtain the values of `a` and `b`, containing values aᵢⱼ and bᵢⱼ. By default, it performs the Van der Waals One-Fluid mixing rule. That is:
 ```
 aᵢⱼ = sqrt(aᵢ*aⱼ)*(1-kᵢⱼ)
 bᵢⱼ = (bᵢ + bⱼ)/2
@@ -156,7 +160,7 @@ end
 function data(model::CubicModel, V, T, z)
     n = sum(z)
     ā, b̄, c̄ = cubic_ab(model, V, T, z)
-    return n, ā, b̄, c̄
+    return Base.promote(n, ā, b̄, c̄)
 end
 
 get_k(model::CubicModel) = cubic_get_k(model,model.mixing,model.params)
@@ -494,7 +498,7 @@ function pure_spinodal(model::DeltaCubicModel,T::K,v_lb::K,v_ub::K,phase::Symbol
     v_bracket = minmax(vx,vm)
     prob = Roots.ZeroProblem(Base.Fix2(evalpoly,dpoly),v_bracket)
     vs = Roots.solve(prob)
-    return vs - c
+    return sum(z)*(vs - c)
 end
 
 function liquid_spinodal_zero_limit(model::DeltaCubicModel,z)
@@ -539,7 +543,66 @@ function zero_pressure_impl(T,a,b,c,Δ1,Δ2,z)
     Δ = sqrt(B^2 - 4*A*C)
     vl = (-B - Δ)/(2*A) - c
     vmax = -B/(2*A) - c
-    return real(vl),real(vmax)
+    n = sum(z)
+    return n*real(vl),n*real(vmax)
+end
+
+function x0_sat_pure_crit_info(model::ABCubicModel,T,crit,z = SA[1.0])
+    #=
+    saturation pressure approximation for cubics, near the critical point.
+    
+    implementation based on:
+    Leibovici, C. F. (1993). Variant and invariant properties from cubic equations of state. Fluid Phase Equilibria, 84, 1–8. doi:10.1016/0378-3812(93)85114-2
+    Sugie, H., Iwahori, Y., & Lu, B. C.-Y. (1989). On the application of cubic equations of state: Analytical expression for α/Tr and improved liquid density calculations. Fluid Phase Equilibria, 50(1–2), 1–20. doi:10.1016/0378-3812(89)80281-x
+    =#
+    RT = Rgas(model)*T
+    Tc,Pc,_ = crit
+    Δ1,Δ2 = cubic_ΔT(model,Tc,z)
+    Ωa,Ωb = ab_consts(Δ1,Δ2)
+    f = 1 - Ωa^(1/3)
+
+    #=
+    We use the Leibovici critical expansion, but we calculate Ψ as a function of Ωa, like sugie proposes.
+    
+    Sugie:
+    α/Tr = 1 - f/(1 - f) * log(Pr/Tr)
+    
+    Leibovici:
+    α/Tr = 1 + (1 - Ψ)/(2 + Ψ) * log(Tr/Pr)
+    α/Tr = 1 + f/(1 - f) * log(Tr/Pr) #log(Tr/Pr) = -log(Pr/Tr)
+    α/Tr = 1 + k * log(Tr/Pr)
+    then:
+    (1 - Ψ)/(2 + Ψ) = f/(1 - f)
+    1 - Ψ - f + Ψf = 2f + Ψf
+    Ψ = 1 - 3f
+    =#
+
+    k = real(f/(1 - f))
+    Ψ = real(1 - 3*f)
+    a0,_,_ = cubic_ab(model,Pc,Tc,z)
+    at,b,c = cubic_ab(model,Pc,T,z)
+    Tr = T/Tc
+    α_over_Tr = at/(a0*Tr)
+    lnTrPr = (α_over_Tr - 1)/k
+    TrPr = exp(lnTrPr)
+    PrTr = 1/TrPr
+    Pr = Tr/TrPr
+    p = Pc*Pr
+    ε = sqrt(lnTrPr)
+    Y0 = (1 - Ψ*PrTr)/3
+    Y1 = sqrt((2 + Ψ)*(1 - Ψ))/3
+    Y2 = evalpoly(Ψ,(4,1,1))/36
+    Y3 = evalpoly(Ψ,(-48,64,87,6,-1))/(288*3*Y1)
+    Y4 = evalpoly(Ψ,(-40,-44,-27,4,-1))/1296
+    B = b*p/RT
+    Yv = evalpoly(ε,(Y0,Y1,Y2,Y3,Y4))
+    Yl = evalpoly(ε,(Y0,-Y1,Y2)) # evalpoly(ε,(Y0,-Y1,Y2,-Y3,Y4))
+    Zl = Yl + B
+    Zv = Yv + B
+    n = sum(z)
+    vv = n*(Zv*RT/p - c)
+    vl = n*(Zl*RT/p - c)
+    return p,vl,vv
 end
 
 #Δ1,Δ2 -> Ωa,Ωb infraestructure
@@ -577,8 +640,8 @@ Base.@assume_effects :foldable function ab_consts(Δ1::Number, Δ2::Number)
     #code adapted from feos
     r2m1 = 1.0 - Δ2
     r1m1 = 1.0 - Δ1
-    term1 = cbrt(r1m1*r2m1*r2m1)
-    term2 = cbrt(r2m1*r1m1*r1m1)
+    term1 = (r1m1*r2m1*r2m1)^(1/3)
+    term2 = (r2m1*r1m1*r1m1)^(1/3)
     ζc = (term1 + term2 + 1.0)
     ηc = 1/ζc
     Ωb⁻¹ = 3.0*ζc - (1.0 + Δ1 + Δ2)
@@ -589,7 +652,7 @@ Base.@assume_effects :foldable function ab_consts(Δ1::Number, Δ2::Number)
     return (Ωa, Ωb)
 end
 
-#leivobici constants
+#leibovici constants
 function cubic_K(model,z)
     Δ1,Δ2 = cubic_Δ(model,z)
     u = - Δ1 - Δ2
@@ -704,8 +767,8 @@ function x0_crit_mix(model::CubicModel,z)
     V_c = volume(model,P_c,T_c,z,phase = :v)/∑z
     return (log10(V_c),T_c)
 end
-antoine_coef(model::ABCubicModel) = (6.668322465137264,6.098791871032391,-0.08318016317721941)
 
+#antoine_coef(model::ABCubicModel) = (6.668322465137264,6.098791871032391,-0.08318016317721941)
 
 function transform_params(::Type{ABCubicParam},params,components)
     n = length(components)
@@ -777,7 +840,7 @@ end
 ## Description
 
 Empty Cubic model constructor.
-It requires specifiying all model arguments.
+It requires specifying all model arguments.
 """
 function CubicModel(cubicmodel::Type{T},params,components;
     idealmodel = BasicIdeal,

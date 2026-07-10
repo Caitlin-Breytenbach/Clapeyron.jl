@@ -1,5 +1,6 @@
 """
     pressure(model::EoSModel, V, T, z=SA[1.])
+    pressure(model, result::FlashResult)
 
 Default units: `[Pa]`
 
@@ -10,23 +11,43 @@ p = -∂A/∂V
 ```
 where A is the Helmholtz energy `[J]`,
 V is the volume `[m³]`
+
+`pressure(model, result::FlashResult)` will return the equilibrium pressure stored in the `result` argument.
 """
 function pressure(model::EoSModel, V, T, z=SA[1.])
     return VT_pressure(model, V, T, z)
 end
 
+"""
+    temperature
+    temperature(model, result::FlashResult)
+
+Default units: `[K]`
+
+Returns the temperature of the model at a given condition.
+
+`temperature(model, result::FlashResult)` will return the equilibrium temperature stored in the `result` argument.
+
+!!! note
+    This function does not have any additional methods, and it is mainly defined for API simplicity.
+    The functions `PH.temperature`, `PS.temperature` and `QP.temperature` instead use indirectly `Clapeyron.temperature` to dispatch to their corresponding methods.
+"""
 function temperature end
 
-VT_pressure(model, V, T, z=SA[1.]) = -∂f∂V(model,V,T,z)
+VT_pressure(model, V, T) = VT_pressure(model, V, T, SA[1.0])
+VT_pressure(model, V, T, z) = -∂f∂V(model,V,T,z)
 VT_temperature(model, V, T, z=SA[1.]) = T
 VT_volume(model, V, T, z=SA[1.]) = V
 
-function pressure_res(model::EoSModel, V, T, z=SA[1.])
-    fun(x) = eos_res(model,x,T,z)
-    return -Solvers.derivative(fun,V)
-end
+#helper function to see if a VT method uses pressure as input.
+VT_use_p(f) = false
 
-VT_pressure_res(model, V, T, z=SA[1.]) = pressure_res(model,V,T,z)
+function pressure_res(model::EoSModel, V, T, z=SA[1.])
+    f = @deferred_V(eos_res,pressure_res)
+    return -Solvers.derivative(f,V)
+end
+VT_pressure_res(model, V, T) = VT_pressure_res(model, V, T, SA[1.])
+VT_pressure_res(model, V, T, z) = pressure_res(model,V,T,z)
 
 function VT_entropy(model::EoSModel, V, T, z::AbstractVector=SA[1.])
     return -∂f∂T(model,V,T,z)
@@ -36,12 +57,12 @@ VT_mass_entropy(model::EoSModel,V, T, z::AbstractVector = SA[1.0]) = VT_entropy(
 
 
 function VT_entropy_res(model::EoSModel, V, T, z=SA[1.])
-    fun(x) = eos_res(model,V,x,z)
-    return -Solvers.derivative(fun,T)
+    f = @deferred_T(eos_res,VT_entropy_res)
+    return -Solvers.derivative(f,T)
 end
 
 function VT_internal_energy(model::EoSModel, V, T, z::AbstractVector=SA[1.])
-    ideal = model isa IdealModel
+    ideal = is_idealmodel(model)
     if iszero(1/V) && !ideal
         return VT_internal_energy(idealmodel(model),V,T,z)
     end
@@ -65,12 +86,12 @@ function VT_internal_energy_res(model::EoSModel, V, T, z=SA[1.])
 end
 
 function VT_enthalpy(model::EoSModel, V, T, z::AbstractVector=SA[1.])
-    ideal = model isa IdealModel
+    ideal = is_idealmodel(model)
     if iszero(1/V) && !ideal
         return VT_internal_energy(idealmodel(model),V,T,z)
     end
 
-    if model isa IdealModel
+    if is_idealmodel(model)
         V₀ = oneunit(V) #the volume term gets cancelled out
     else
         V₀ = V
@@ -94,7 +115,7 @@ function VT_enthalpy_res(model::EoSModel, V, T, z=SA[1.])
 end
 
 function VT_gibbs_free_energy(model::EoSModel, V, T, z::AbstractVector=SA[1.], p = nothing)
-    ideal = model isa IdealModel
+    ideal = is_idealmodel(model)
     if iszero(1/V) && !ideal
         return VT_gibbs_free_energy(idealmodel(model), V, T, z)
     end
@@ -113,11 +134,14 @@ function VT_gibbs_free_energy(model::EoSModel, V, T, z::AbstractVector=SA[1.], p
     end
 end
 
+VT_use_p(::typeof(VT_gibbs_free_energy)) = true
+
 VT_mass_gibbs_free_energy(model::EoSModel,V, T, z::AbstractVector = SA[1.0],p = nothing) = VT_gibbs_free_energy(model,V,T,z,p)/molecular_weight(model,z)
 
+VT_use_p(::typeof(VT_mass_gibbs_free_energy)) = true
+
 function VT_gibbs_free_energy_res(model::EoSModel, V, T, z=SA[1.])
-    fun(x) = eos_res(model,x,T,z)
-    Ar,∂A∂Vr = Solvers.f∂f(fun,V)
+    Ar,∂A∂Vr = f∂fdV_res(model,V,T,z)
     PrV = ifelse(iszero(1/V),zero(∂A∂Vr),- V*∂A∂Vr)
     return Ar + PrV
 end
@@ -147,7 +171,7 @@ VT_mass_isochoric_heat_capacity(model::EoSModel,V, T, z::AbstractVector = SA[1.0
 
 
 function VT_isobaric_heat_capacity(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         ∂²A∂T² = ∂²f∂T²(model,V,T,z)
         return -T*∂²A∂T² + Rgas(model)*sum(z)
     else
@@ -155,14 +179,14 @@ function VT_isobaric_heat_capacity(model::EoSModel, V, T, z=SA[1.])
         ∂²A∂V∂T = d²A[1,2]
         ∂²A∂V² = d²A[1,1]
         ∂²A∂T² = d²A[2,2]
-        return -T*(∂²A∂T² - ∂²A∂V∂T^2/∂²A∂V²)
+        return -T*(∂²A∂T² - ∂²A∂V∂T*∂²A∂V∂T/∂²A∂V²)
     end
 end
 
 VT_mass_isobaric_heat_capacity(model::EoSModel,V, T, z::AbstractVector = SA[1.0]) = VT_isobaric_heat_capacity(model,V,T,z)/molecular_weight(model,z)
 
 function VT_adiabatic_index(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         ∂²A∂T² = ∂²f∂T²(model,V,T,z)
         1 - Rgas(model)*sum(z)/(∂²A∂T²*T)
     else
@@ -175,7 +199,7 @@ function VT_adiabatic_index(model::EoSModel, V, T, z=SA[1.])
 end
 
 function VT_isothermal_compressibility(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         return V/(sum(z)*Rgas(model)*T)
     else
         _,∂p∂V = p∂p∂V(model,V,T,z)
@@ -184,7 +208,7 @@ function VT_isothermal_compressibility(model::EoSModel, V, T, z=SA[1.])
 end
 
 function VT_isentropic_compressibility(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         ∂²A∂T² = ∂²f∂T²(model,V,T,z)
         R = Rgas(model)
         V_∂²A∂V∂T_2 = R*R/V
@@ -195,13 +219,13 @@ function VT_isentropic_compressibility(model::EoSModel, V, T, z=SA[1.])
         ∂²A∂V∂T = d²A[1,2]
         ∂²A∂V² = d²A[1,1]
         ∂²A∂T² = d²A[2,2]
-        return 1/V/(∂²A∂V²-∂²A∂V∂T^2/∂²A∂T²)
+        return 1/V/(∂²A∂V²-∂²A∂V∂T*∂²A∂V∂T/∂²A∂T²)
     end
 end
 
 function VT_speed_of_sound(model::EoSModel, V, T, z=SA[1.])
     Mr = molecular_weight(model,z)
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         γ = VT_adiabatic_index(model,V,T,z)
         return sqrt(γ*Rgas(model)*T*sum(z)/Mr)
     else
@@ -209,12 +233,12 @@ function VT_speed_of_sound(model::EoSModel, V, T, z=SA[1.])
         ∂²A∂V∂T = d²A[1,2]
         ∂²A∂V² = d²A[1,1]
         ∂²A∂T² = d²A[2,2]
-        return V*sqrt((∂²A∂V²-∂²A∂V∂T^2/∂²A∂T²)/Mr)
+        return V*sqrt((∂²A∂V²-∂²A∂V∂T*∂²A∂V∂T/∂²A∂T²)/Mr)
     end
 end
 
 function VT_isobaric_expansivity(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V)  || model isa IdealModel
+    if iszero(1/V)  || is_idealmodel(model)
         return one(Base.promote_eltype(model,V,T,z))/T
     else
         d²A = f_hess(model,V,T,z)
@@ -225,7 +249,7 @@ function VT_isobaric_expansivity(model::EoSModel, V, T, z=SA[1.])
 end
 
 function VT_joule_thomson_coefficient(model::EoSModel, V, T, z=SA[1.])
-    if iszero(1/V) || model isa IdealModel
+    if iszero(1/V) || is_idealmodel(model)
         B,∂B∂T = B∂B∂T(model,T,z)
         Cp = VT_isobaric_heat_capacity(model,V,T,z)
         return (T*∂B∂T - B)/Cp
@@ -234,7 +258,8 @@ function VT_joule_thomson_coefficient(model::EoSModel, V, T, z=SA[1.])
         ∂²A∂V∂T = d²A[1,2]
         ∂²A∂V² = d²A[1,1]
         ∂²A∂T² = d²A[2,2]
-        return -(∂²A∂V∂T - ∂²A∂V²*((T*∂²A∂T² + V*∂²A∂V∂T) / (T*∂²A∂V∂T + V*∂²A∂V²)))^-1
+        coeff_inv =  -(∂²A∂V∂T - ∂²A∂V²*((T*∂²A∂T² + V*∂²A∂V∂T) / (T*∂²A∂V∂T + V*∂²A∂V²)))
+        return 1/coeff_inv
     end
 end
 
@@ -245,6 +270,7 @@ function VT_compressibility_factor(model::EoSModel, V, T, z=SA[1.],p = nothing)
         return p*V/(sum(z)*R̄*T)
     end
 end
+VT_use_p(::typeof(VT_compressibility_factor)) = true
 
 """
     second_virial_coefficient(model::EoSModel, T, z=SA[1.])
@@ -265,14 +291,18 @@ end
 function second_virial_coefficient_impl(model::EoSModel, T, z = SA[1.0])
     TT = one(Base.promote_eltype(model,T,z))
     ϵ = 1/eps(TT)
-    V = sqrt(ϵ)
+    V = sqrt(sum(z)*ϵ)
     return pressure_res(model,V,T,z)*ϵ/(Rgas(model)*T)
 end
 
+__B(model,V,T,z) = second_virial_coefficient_impl(model,T,z)
+
 function B∂B∂T(model,T,z = SA[1.0])
-    b(T) = second_virial_coefficient(model,T,z)
+    V = Inf
+    b = @deferred_T(__B,B∂B∂T)
     return Solvers.f∂f(b,T)
 end
+
 """
     cross_second_virial(model,T,z)
 
@@ -371,10 +401,9 @@ end
 VT_pip(model::EoSModel, V, T, z=SA[1.0]) = pip(model,V,T,z)
 
 function _pip(model::EoSModel, V, T, z=SA[1.0])
-    _∂2p = ∂2p(model,V,T,z)
-    hess_p, grad_p, _ = _∂2p
-    ∂p∂V = grad_p[1]
-    Π = V*(hess_p[1,2]/grad_p[2]  - hess_p[1,1]/grad_p[1])
+    _∂2p = ∂2p_vec(model,V,T,z)
+    _,∂p∂V,∂p∂T,∂2p∂V2,∂2p∂T2,∂2p∂V∂T = _∂2p
+    Π = V*(∂2p∂V∂T/∂p∂T  - ∂2p∂V2/∂p∂V)
     return Π,∂p∂V
 end
 
@@ -384,7 +413,7 @@ function VT_fundamental_derivative_of_gas_dynamics(model::EoSModel, V, T, z=SA[1
     ∂²A∂V∂T = d²A[1,2]
     ∂²A∂V² = d²A[1,1]
     ∂²A∂T² = d²A[2,2]
-    c =  V*sqrt((∂²A∂V²-∂²A∂V∂T^2/∂²A∂T²)/Mr)
+    c =  V*sqrt((∂²A∂V²-∂²A∂V∂T*∂²A∂V∂T/∂²A∂T²)/Mr)
     A(x) = eos(model,V,x,z)
     ∂A∂T(x) = Solvers.derivative(A,x)
     ∂²A∂T²(x) = -T*Solvers.derivative(∂A∂T,x)
@@ -395,7 +424,8 @@ function VT_fundamental_derivative_of_gas_dynamics(model::EoSModel, V, T, z=SA[1
     ∂p∂T,∂p∂V = grad_p[2],grad_p[1]
     Γ₁ = ∂²p∂V²
     Γ₂ = (-3*T/Cᵥ)*∂p∂T*∂²p∂V∂T
-    Γ₃ = ((T/Cᵥ)*∂p∂T)^2 * (3*∂²p∂T² + (∂p∂T/T)*(1 - (T/Cᵥ)*∂Cᵥ∂T))
+    xx = ((T/Cᵥ)*∂p∂T)
+    Γ₃ = xx*xx * (3*∂²p∂T² + (∂p∂T/T)*(1 - (T/Cᵥ)*∂Cᵥ∂T))
     return (V*V*V/(2*c*c*Mr))*(Γ₁ + Γ₂ + Γ₃)
 end
 
@@ -430,17 +460,8 @@ end
 
 #Vector Properties
 
-struct ZVar{P,M,V,T}
-    property::P
-    model::M
-    vol::V
-    temp::T
-end
-
-(fixed::ZVar{P,M,V,T})(z::Z) where {P,M,V,T,Z} = fixed.property(fixed.model,fixed.vol,fixed.temp,z)
-
 function VT_molar_gradient(model::EoSModel,V,T,z::AbstractVector,property::ℜ) where {ℜ}
-    fun = ZVar(property,model,V,T)
+    fun = @deferred_Z(property,∂₁f)
     TT = gradient_type(model,T+V,z)
     return Solvers.gradient(fun,z)::TT
 end
@@ -450,7 +471,7 @@ function VT_molar_gradient!(fx::F,model::EoSModel,V,T,z,property::ℜ) where {F<
         fx .= NaN
         return fx
     end
-    fun = ZVar(property,model,V,T)
+    fun = @deferred_Z(property,∂₁f)
     return Solvers.gradient!(fx,fun,z)::F
 end
 
@@ -498,8 +519,7 @@ function _VT_fugacity_coefficient(model::EoSModel,V,T,z)
 end
 
 function _VT_fugacity_coefficient(model::EoSModel,V,T,z::SingleComp)
-    f(_V) = eos_res(model, _V, T,z)
-    A,dAdV = Solvers.f∂f(f,V)
+    A,dAdV = f∂fdV_res(model,V,T,z)
     R̄ = Rgas(model)
     ∑z= sum(z)
     p_ideal = ∑z*R̄*T/V
@@ -561,6 +581,7 @@ const VT_mass_gibbs_energy = VT_mass_gibbs_free_energy
 
 export pressure
 export second_virial_coefficient,cross_second_virial,equivol_cross_second_virial
+@public temperature, pip
 
 const CLAPEYRON_PROPS = [:temperature,:volume, :pressure, :entropy, :internal_energy, :enthalpy, :gibbs_free_energy, :helmholtz_free_energy,
                     :entropy_res, :internal_energy_res, :enthalpy_res, :gibbs_free_energy_res, :helmholtz_free_energy_res,
@@ -590,6 +611,26 @@ end
 
 
 #module used to translate between the normal symbol and the VT_symbol.
+
+"""
+    VT0
+
+Module that stores Clapeyron properties in (total) volume-temperature basis.
+
+## Usage
+```julia
+using Clapeyron.VT0
+
+model = PR("water")
+T = 300.0
+V = volume(model,1e5,T,phase = :l)
+VT0.enthalpy(model,V,T)
+```
+
+The functions stored in the `VT0` module do not perform any type of phase stability checking. 
+The user must be sure to give a physically sensible volume value.
+For calculations in volume-temperature basis that check and calculate if there are multiple phases, use the [`VT`] module instead.
+"""
 module VT0
     using Clapeyron: Clapeyron, CLAPEYRON_PROPS
     for prop in Clapeyron.CLAPEYRON_PROPS
@@ -600,4 +641,6 @@ module VT0
             end
         end
     end
+    chemical_potential(model,V,T,z=Clapeyron.SA[1.0]) = Clapeyron.VT_chemical_potential(model,V,T,z)
+    chemical_potential_res(model,V,T,z = Clapeyron.SA[1.0]) = Clapeyron.VT_chemical_potential_res(model,V,T,z)
 end

@@ -35,14 +35,23 @@ function crit_v_to_x(lbv,v)
 end
 
 function crit_pure(model::EoSModel,x0,z = SA[1.0];options = NEqOptions())
+    return critical_point_solver(model,x0,z;options)
+end
+
+function critical_point_solver(model::EoSModel,x0,z = SA[1.0];options = NEqOptions())
     check_arraysize(model,z)
     #f! = (F,x) -> obj_crit(model, F, x[1]*T̄, exp10(x[2]))
     zp = primalval(z)
     primalmodel = primalval(model)
     if x0 === nothing
-        x0 = x0_crit_pure(primalmodel,zp)
+        _x0 = x0_crit_pure(primalmodel,zp)
+    elseif x0 isa Type && x0 <: Number
+        x0x = x0_crit_pure(primalmodel,zp)
+        _x0 = x0.(x0x)
+    else
+        _x0 = x0
     end
-    x01,x02 = x0
+    x01,x02 = _x0
     T̄  = T_scale(primalmodel,zp)*one(x01*one(x02))
     Tc0 = x01*T̄
     lbv0 = lb_volume(primalmodel,Tc0,zp)
@@ -51,7 +60,7 @@ function crit_pure(model::EoSModel,x0,z = SA[1.0];options = NEqOptions())
     vc0 = exp10(primalval(x02))
     x0 = vec2(Tx0,crit_v_to_x(lbv0,vc0),_1)
     zz = zp/sum(zp)
-    f!(F,x) = ObjCritPure(primalmodel,F,primalval(T̄),x,zz)
+    f! = WithContext(CritPure(primalmodel,primalval(T̄),zz),∂Tag{critical_point_solver}())
     solver_res = Solvers.nlsolve(f!, x0, TrustRegion(Newton(), NLSolvers.NWI()), options)
     r  = Solvers.x_sol(solver_res)
     !__check_convergence(solver_res) && (r .= NaN)
@@ -79,7 +88,7 @@ function crit_pure_ad(crit,tup,λtup)
             _,F1,F2 = p∂p∂2p(model, Vc, Tc, z)
             return SVector(F1,F2)
         end
-        T_c,V_c = __gradients_for_root_finders(x,tup,λtup,f)
+        T_c,V_c = __gradients_for_root_finders(λx,tup,λtup,f)
         P_c = pressure(model,V_c,T_c,z)
         return (T_c,P_c,V_c)
     else
@@ -87,11 +96,30 @@ function crit_pure_ad(crit,tup,λtup)
     end
 end
 
+struct CritPure{M,T,Z}
+    model::M
+    T̄::T
+    z::Z
+end
+
+StaticForwardDiffTags.deferred_valtype(m::CritPure) = Base.promote_eltype(m.model,m.T̄,m.z)
+
 function ObjCritPure(model::T,F,T̄,x,z) where T
     sv = __ObjCritPure(model,T̄,x,z)
     F[1] = sv[1]
     F[2] = sv[2]
     return F
+end
+
+function (crit::CritPure{M,T,Z})(F,x) where {M,T,Z}
+    sv = __ObjCritPure(crit.model,crit.T̄,x,crit.z)
+    F[1] = sv[1]
+    F[2] = sv[2]
+    return F
+end
+
+function (crit::CritPure{M,T,Z})(x) where {M,T,Z}
+    return __ObjCritPure(crit.model,crit.T̄,x,crit.z)
 end
 
 function __ObjCritPure(model::T,T̄,x,z) where T

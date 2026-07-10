@@ -6,6 +6,43 @@ using Clapeyron, Test, LinearAlgebra
         #before, it was coo, making a collision on Electrolyte SAFTgammaMie
         @test Clapeyron.normalisestring("COO-") == "coo-"
     end
+
+    @testset "get_header" begin
+        t1,sep1,header1 = Clapeyron.get_header(Clapeyron.DB_PATH * "/properties/molarmass.csv")
+        @test sep1 == ","
+        @test header1.csvtype == Clapeyron.singledata
+
+        t2,sep2,header2 = Clapeyron.get_header(Clapeyron.DB_PATH * "/properties/identifiers.csv")
+        @test sep2 == ";"
+
+        t3,sep3,header3 = Clapeyron.get_header(Clapeyron.DB_PATH * "/ideal/WalkerIdeal.csv")
+        @test header3.grouptype == :Walker
+
+        #t4,sep4,header4 = Clapeyron.get_header(Clapeyron.DB_PATH * "/../examples/data/gc_sat_prop.csv")
+        #@test header4.estimator == :saturation_p_rhol
+        #@test header4.species[1] == "ethane"
+
+        t5,sep5,header5 = Clapeyron.make_header((species = ["a","b"],b = [1,2]))
+        @test sep5 == ","
+        @test header5.csvtype == :like
+
+        t6,sep6,header6 = Clapeyron.make_header((species = ["a,","b"],b = [1,2]))
+        @test sep6 == ";"
+
+        t7,sep7,header7 = Clapeyron.make_header((species1 = ["a","b"],species2 = ["b,","a"],b = [1,2]))
+        @test header7.csvtype == :pair
+
+        t8,sep8,header8 = Clapeyron.make_header((species1 = ["a,","b"],species2 = ["b,","a"],b = [1,2]))
+        @test sep8 == ";"
+
+        t9,sep9,header9 = Clapeyron.make_header((species1 = ["a","b"],species2 = ["b","a"],site1 = ["e","e"], site2 = ["H","H"],b = [1,2]))
+        @test header9.csvtype == :assoc
+
+        t10,sep10,header10 = Clapeyron.make_header((species = ["a,","b"],groups = ["",""],b = [1,2]),"aaa",:test_grouptype)
+        @test header10.csvtype == :group
+        @test header10.grouptype == :test_grouptype
+        @test occursin("aaa",t10)
+    end
      
     # The rest of the test will be conducted with a custom dataset in the test_csvs directory.
     testspecies = ["sp1", "sp2", "sp3", "sp4", "sp5"]
@@ -165,6 +202,8 @@ using Clapeyron, Test, LinearAlgebra
         @test Clapeyron.diagvalues(1.23) == 1.23
          
         assoc_param = params["assocparam"]
+        test_repr(assoc_param,str = "sp3")
+        test_repr(assoc_param.values)
         #diagonal 3-3
         @test assoc_param[("sp3","H"),("sp3","e")] == 2000
         @test assoc_param[("sp3","e"),("sp3","H")] == 2000
@@ -264,6 +303,10 @@ using Clapeyron, Test, LinearAlgebra
         
         floatbool .= exp.(1.1 .+ floatbool)
         @test_throws InexactError convert(SingleParam{Int},floatbool)
+        
+        #copyto!
+        copyto!(floatbool,[2,3])
+        @test floatbool.values == [2,3]
 
         #pair param conversion and broadcasting
         floatbool = PairParam("float to bool",comps,[1.0 0.0;0.0 1.0])
@@ -452,5 +495,52 @@ using Clapeyron, Test, LinearAlgebra
 
         c1 = Clapeyron.cas("water")
         @test c1[1] == "7732-18-5"
+
+        model_cas = PCSAFT(cas"7732-18-5")
+        @test model_cas.components == ["water"]
+        model_smiles = PCSAFT(smiles"O")
+        @test model_smiles.components == ["water"]
+    end
+
+    @testset "parse_bracket_format" begin
+
+        #plain values"
+        d = Clapeyron.parse_bracket_format("[a = 1,b = autobahn,c = false]")
+        @test d["a"][2] == "1"
+        @test d["b"][2] == "autobahn"
+        @test d["c"][2] == "false"
+
+        #empty input
+        @test isempty(Clapeyron.parse_bracket_format("[]"))
+        @test isempty(Clapeyron.parse_bracket_format("[    ]"))
+
+        #plain value with spaces
+        d = Clapeyron.parse_bracket_format("[cli = a b c, b = a]")
+        @test d["cli"][2] == "a b c"
+        @test d["b"][2]   == "a"
+
+        #quoted list – whitespace separated
+        d = Clapeyron.parse_bracket_format("""[vec = "a" "b" "c", other = 2]""")
+        @test Clapeyron._parse_vec(d["vec"][2])   == ["a","b","c"]
+        @test d["other"][2] == "2"
+
+        # parenthesised list (values may contain '=')
+        d = Clapeyron.parse_bracket_format("""[vec = ("c" "b=" "a"), 1 = 2]""")
+        @test Clapeyron._parse_vec(d["vec"][2]) == ["c","b=","a"]
+        @test d["1"][2]   == "2"
+
+        # single quoted token → String, not Vector
+        d = Clapeyron.parse_bracket_format("""[x = "hello", y = 42]""")
+        @test d["x"][1] == false
+        @test d["x"][2] == "hello"
+
+        # parenthesised single token → Vector
+        d = Clapeyron.parse_bracket_format("""[x = ("only")]""")
+        @test d["x"][1] == true
+        @test Clapeyron._parse_vec(d["x"][2]) == ["only"]
+
+        # extra whitespace around keys and values
+        d = Clapeyron.parse_bracket_format("[  key  =  value  ]")
+        @test d["key"][2] == "value"
     end
 end

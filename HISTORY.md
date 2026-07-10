@@ -1,3 +1,75 @@
+# v0.6.25
+
+## New Features
+
+- Estimation framework: revamped internals, what was previously `Estimation` was renamed `EstimationProblem`, and there are two new structs: `EstimationModel`, a wrapper over a model and `ToEstimate` that allows indexing models as if they are the vector of parameters described by `ToEstimate`; and `EstimationData`, that is a reimplementation of the old `EstimationData` struct that additionally stores the loss and the estimator method, allowing multiple loss functions per estimation problem, along with standalone, model-independent evaluations of the objective function. Current estimation workflows that used the documented API are not affected, apart from performance improvements.
+To see a full list of the changes, we recomend checking the new estimation basics tutorial.
+- Activity models: a consistent gibbs bulk property model for the liquid phase was defined, based on the incompressible approximation already used on Clapeyron equilibria solvers. The gas phase is still evaluated in the helmholtz framework.
+- New flash method: `RRXYFlash`, a X-(T or P) flash with support for activity and composite models.
+- Flash: activity and composite models can now get properties via `property(model,result::FlashResult)`
+- Flash: `FlashResult` now stores the index of vapour phase. it can be accessed via `identify_phase(result,i)`
+- Activity models: support for `Tproperty`/`Pproperty`/`edge_pressure`/`edge_temperature`
+- New model: Patel-Teja-Hayen cubic (`PatelTejaHayen`)
+- New alpha model: Twu alpha estimation used in `tcPR` and `tcRK` (`tcTwuAlpha`)
+- New translation model: `tcPR` and `tcRK` translation estimation (`tcTranslation`)
+- Cubic mixing rules: support for more cubics. Before, most EoS + GE mixing rules were only correct for cubics with composition-independent coefficients.
+- CSV parsing: options can now be provided via an inline JSON file: `[csvtype = single]` is equivalent to `{"csvtype" : "single"}`
+- Flash methods: added `verbose` option to `RRQXFlash`, improved `verbose` display for `RRTPFlash`/`MichelsenTPFlash`
+- Various bug fixes and stability improvements.
+
+## Other Changes
+
+- `ClapeyronHANNA` was deprecated. the new version just uses the implementation on `MLThermoProperties` instead.
+
+# v0.6.24
+
+## New Features
+
+- Association: better initial points and faster evaluation via compression of the association matrix.
+- `GeneralizedXYFlash`: added `verbose` option
+- `ChemPotBubblePressure`: added `verbose` option
+- `ChemPotBubbleTemperature`: added `verbose` option
+- `ChemPotDewPressure`: added `verbose` option
+- `ChemPotDewTemperature`: added `verbose` option
+- `Tproperty`/`Pproperty`: better initial points for poins inside the phase change region.
+- `spinodal_pressure`/`spinodal_temperature`: initial points now use `edge_temperature`/`edge_pressure` instead of bubble/dew calculations, improving speed and stability, especially with conditions near the mixture critical point
+- `EPPR78`: support for passing `alpha` and `translation` submodels
+- stability improvements to `edge_pressure`/`edge_temperature`
+
+## Bug fixes
+
+- Fixes in `split_model` when indices aren't ordered
+
+# v0.6.23
+
+## New Features
+
+- New ideal models: `GCAlyLee` and `BurkhardtIdeal`
+-New string macros: `@cas_str` and `@smiles_str`, that allow searching components by CAS and SMILES respectively.
+- improved initial point for bubble/dew calculations
+
+## Bug fixes
+
+- Fixes and improvements in volume calculation.
+- `SingleFluid`, when passing a JSON directly as a string, now the name stored is extracted and used. before, the whole JSON string was used as a name.
+
+# v0.6.22
+
+## New Features
+
+- Implicit differentiation: the core implicit differentiation routines were replaced by `IFTDuals.ift`.
+- Experimental: `AssocOptions` supports the `implicit_ad` option to calculate derivatives of the association solver via `IFTDuals`
+- Implicit differentiation is now enabled in PH flash and PS flash.
+- Experimental: new tpd function: `Clapeyron.tpd2`, that returns a `TPDResult` struct instead of a tuple of vectors
+- Experimental: New model wrapper for electrolyte wrappers: `MeanIonicApproach` with support for `tp_flash`
+
+## Bug fixes
+
+- Fixes in `iPCSAFT`
+- Fixes in electrolyte routines
+- Fixes in Multifluid initial volume
+- Fixes in `MultiPhaseTPFlash`
+
 # v0.6.21
 
 ## New Features

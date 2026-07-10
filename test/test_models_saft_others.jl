@@ -92,7 +92,25 @@ end
         test_gibbs_duhem(system, V, T, z)
         test_scales(system)
         test_repr(system,str = ["RDF: Carnahan-Starling (original CPA)"])
+
+        model1 = CPA(["C3","C4"];userlocations=(;
+                    Mw = [44.097,58.124],
+                    Tc = [369.83,425.18],
+                    a = [9.11875,13.14274],
+                    b = [0.057834,0.072081],
+                    c1 = [0.6307,0.70771],
+                    epsilon_assoc=nothing,
+                    bondvol=nothing))
+        @test model1 isa CPA
         GC.gc()
+
+        #597
+        T597 = 351.03014827873614
+        y597 = [1.0, 1.0674702898962479e-31, 3.5750339860758175e-31, 5.826495944830307e-32]
+        V597 = 1e-3
+        model597_all =  CPA(["water", "methanol", "ethanol", "benzene"])
+        model597_1 = CPA("water")
+        eos(model597_1,V597,T597) ≈ eos(model597_all,V597,T597,y597) 
     end
 
     @testset "sCPA" begin
