@@ -1010,10 +1010,21 @@ end
     end
 
     @testset "bubble/dew type stability" begin
+        saturation_temperature(cPR("isobutane"), 1.7855513185537157e6; crit_retry = false)
+
         admodel = cPR(["R134a","propane"])
         @test @inferred(bubble_pressure(admodel, 300., [0.5, 0.5])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
         @test @inferred(bubble_temperature(admodel, 300., [1.,0.])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
         @test @inferred(dew_pressure(admodel, 300., [0.,1.])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
         @test @inferred(dew_temperature(admodel, 300., [0.5,0.5])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
+    end
+
+    @testset "pure saturation and bubble-pressure type stability" begin
+        model_r, _ = Clapeyron.index_reduction(system1, [1.0, 0.0])
+        method = Clapeyron.ChemPotVSaturation()
+        T = 313.15
+        @test @inferred(Clapeyron.x0_sat_pure_virial(model_r, T)) isa NTuple{3,Float64}
+        @test @inferred(saturation_pressure(model_r, T, method)) isa NTuple{3,Float64}
+        @test @inferred(bubble_pressure(system1, T, [1.0, 0.0])) isa Tuple{Float64,Float64,Float64,Vector{Float64}}
     end
 end
