@@ -41,7 +41,9 @@ function saturation_pressure(model::EoSModel,T,method::SaturationMethod)
     single_component_check(saturation_pressure,model)
     T = T*(T/T)*oneunit(eltype(model))
     satmodel = saturation_model(model)
-    satmodel !== model && saturation_pressure(satmodel,T,method)
+    if satmodel !== model
+        return saturation_pressure(satmodel, T, method)
+    end
     if has_a_res(model)
         λmodel,λT = primalval(model),primalval(T)
         λresult = saturation_pressure_impl(λmodel,λT,method)
@@ -147,7 +149,7 @@ end
 function saturation_temperature(model,p,method::SaturationMethod)
     satmodel = saturation_model(model)
     if satmodel !== model
-        return saturation_temperature(satmodel,p;method)
+        return saturation_temperature(satmodel,p,method)
     end
     single_component_check(crit_pure,model)
     p = p*p/p
@@ -171,7 +173,7 @@ function saturation_temperature(model::EoSModel, p, T0::Number)
     saturation_temperature(model,p,method)
 end
 
-function saturation_temperature_ad(result,tup,tup_primal)    
+function saturation_temperature_ad(result,tup,tup_primal)
     f(x,tups) = begin
         model,p = tups
         T,vl,vv = x
