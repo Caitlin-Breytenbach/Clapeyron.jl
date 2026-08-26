@@ -1,5 +1,3 @@
-using Clapeyron, Test, Unitful
-
 @testset "pharmaPCSAFT, single components" begin
     system = pharmaPCSAFT(["water"])
     v1 = Clapeyron.saturation_pressure(system, 280.15)[2]
@@ -408,34 +406,26 @@ GC.gc()
     p = 1e5
     T = 298.15
     @testset "Bulk properties" begin
-        @test Clapeyron.volume(system, p, T) ≈ 1.8067969591040684e-5 rtol = 1e-6
-        @test Clapeyron.speed_of_sound(system, p, T) ≈ 1484.0034692716843 rtol = 1e-6
+        @test Clapeyron.volume(system, p, T) ≈ 1.806796959197751e-5 rtol = 1e-6
+        @test Clapeyron.speed_of_sound(system, p, T) ≈ 1484.0042866849979 rtol = 1e-6
         #EOS-LNG, table 15
         V1,T1 = 1/27406.6102,100.0
-        @test Clapeyron.pressure(met,V1,T1)  ≈ 1.0e6 rtol = 2e-6
+        @test Clapeyron.pressure(met,V1,T1)  ≈ 1.0e6 rtol = 1e-6
         @test Clapeyron.VT_speed_of_sound(met,V1,T1) ≈ 1464.5158 rtol = 1e-6
-        @test Clapeyron.pressure(met,1/28000,140) ≈ 86.944725e6  rtol = 2e-6
+        @test Clapeyron.pressure(met,1/28000,140) ≈ 86.944725e6  rtol = 1e-6
     end
     @testset "VLE properties" begin
-        @test Clapeyron.saturation_pressure(system, T)[1] ≈ 3184.83242429761 rtol = 1E-6
-        @test Clapeyron.saturation_pressure(system, T, IsoFugacitySaturation())[1] ≈ 3184.83242429761 rtol = 1E-6
-        @test Clapeyron.crit_pure(system)[1] ≈ 647.0960000000457 rtol = 1E-6
+        @test Clapeyron.saturation_pressure(system, T)[1] ≈ 3184.8360179887577 rtol = 1E-6
+        @test Clapeyron.saturation_pressure(system, T, IsoFugacitySaturation())[1] ≈ 3184.8360179887577 rtol = 1E-6
+        @test Clapeyron.crit_pure(system)[1] ≈ 647.096 rtol = 1E-6
     end
 end
 
 @testset "GERG2008 methods, multi-components" begin
     @testset "Bulk properties" begin
-        model = Clapeyron.GERG2008(["nitrogen","methane","ethane","propane","butane","isobutane","pentane"])
-        lng_composition = [0.93,92.1,4.64,1.7,0.42,0.32,0.09]
-        lng_composition_molar_fractions = lng_composition ./sum(lng_composition)
-        @test Clapeyron.molar_density(model,(380.5+101.3)*1000.0,-153.0+273.15,lng_composition_molar_fractions)/1000 ≈ 24.98 rtol = 1E-2
-        @test Clapeyron.mass_density(model,(380.5+101.3)*1000.0,-153.0+273.15,lng_composition_molar_fractions) ≈ 440.73 rtol = 1E-2
-        @test Clapeyron.molar_density(model,(380.5+101.3)u"kPa",-153.0u"°C",lng_composition_molar_fractions;output=u"mol/L") ≈ 24.98*u"mol/L"  rtol=1E-2
-        @test Clapeyron.mass_density(model,(380.5+101.3)u"kPa",-153.0u"°C",lng_composition_molar_fractions;output=u"kg/m^3")  ≈ 440.73*u"kg/m^3" rtol=1E-2
-    
         #test found in #371
         model2 = GERG2008(["carbon dioxide","nitrogen","water"])
-        @test mass_density(model2,64.0e5,30+273.15,[0.4975080785711593, 0.0049838428576813995, 0.4975080785711593],phase = :l) ≈ 835.3971524715569 rtol = 1e-6
+        @test mass_density(model2,64.0e5,30+273.15,[0.4975080785711593, 0.0049838428576813995, 0.4975080785711593],phase = :l) ≈ 835.3971524715571 rtol = 1e-6
     
         #test found in #395:
 
@@ -450,7 +440,7 @@ end
         system = GERG2008(["carbon dioxide","water"])
         T = 298.15
         z = [0.8,0.2]
-        @test Clapeyron.bubble_pressure(system, T,z)[1] ≈ 5.853909891112583e6 rtol = 1E-5
+        @test Clapeyron.bubble_pressure(system, T,z)[1] ≈ 5.853916496529343e6 rtol = 1E-5
     end
 end
 

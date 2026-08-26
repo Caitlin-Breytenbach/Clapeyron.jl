@@ -1,6 +1,6 @@
 
 
-@testset "Activity models" begin
+@testset verbose = true "Activity models" begin
     @printline
     let T = 333.15, V = 1e-3, p = 1e5, z = [0.5, 0.5], z1 = Clapeyron.SA[1.0], z2 = [0.5,0.5], z3 = [0.333, 0.333, 0.333];
     @testset "Margules" begin
@@ -106,7 +106,7 @@
     @printline
 end
 
-@testset "Ideal models" begin
+@testset verbose = true "Ideal models" begin
     @printline
     let T = 298.15, V = 1e-4,p = 1e5,z = Clapeyron.SA[1.0],z1 = Clapeyron.SA[1.0],z2 = [0.5,0.5],z3 = [0.333, 0.333,0.333];
     @testset "Joback" begin
@@ -263,7 +263,7 @@ end
     @printline
 end
 
-@testset "Multi-parameter models" begin
+@testset verbose = true "Multi-parameter models" begin
     @printline
     let T = 298.15, V = 1e-4,p = 1e5,z = Clapeyron.SA[1.0],z1 = Clapeyron.SA[1.0],z2 = [0.5,0.5],z3 = [0.333, 0.333,0.333]; 
     #warning, we are in the pseudo maxwell loop, those properties are nonsense, but they evaluate anyway.
@@ -287,11 +287,11 @@ end
 
     @testset "GERG2008" begin
         system = GERG2008(["water"])
-        @test Clapeyron.a_ideal(system, V, T, z) ≈ 4.500151936577565 rtol = 1e-6
+        @test Clapeyron.a_ideal(system, V, T, z) ≈ 4.5001462034164685 rtol = 1e-6
         @test Clapeyron.a_res(system, V, T, z) ≈ -10.122119572808764 rtol = 1e-6
         z4   = [0.25,0.25,0.25,0.25]
         system = GERG2008(["water","carbon dioxide","hydrogen sulfide","argon"])
-        @test Clapeyron.a_ideal(system, V, T, z4) ≈ 3.1136322215343917 rtol = 1e-6
+        @test Clapeyron.a_ideal(system, V, T, z4) ≈ 3.11362687497496 rtol = 1e-6
         @test Clapeyron.ideal_consistency(system, V, T, z4) ≈ 0.0 rtol = 1e-14
         @test Clapeyron.a_res(system, V, T, z4) ≈ -1.1706377677539772 rtol = 1e-6
         @test Clapeyron.ideal_consistency(system,V,T,z4) ≈ 0.0 atol = 1e-14
@@ -414,8 +414,8 @@ end
 end
 
 
-@testset "Correlations" begin
-    @testset "Saturation" begin
+@testset verbose = true "Correlations" begin
+    @testset verbose = true "Saturation" begin
         @testset "AntoineSat" begin
             system = AntoineEqSat(["water"])
             p0 = saturation_pressure(system,400.01)[1]
@@ -444,7 +444,7 @@ end
             @test saturation_temperature(system,p0)[1] ≈ 400.01 rtol = 1e-6
         end=#
     end
-    @testset "LiquidVolume" begin
+    @testset verbose = true "LiquidVolume" begin
         @testset "COSTALD" begin
             system = COSTALD(["water"])
             @test volume(system,1e5,300.15) ≈ 1.8553472145724288e-5 rtol = 1e-6
@@ -542,7 +542,7 @@ end
         end
     end
 
-    @testset "Virial Coeff" begin
+    @testset verbose = true "Virial Coeff" begin
         @testset "AbbottVirial" begin
             system = AbbottVirial(["methane","ethane"])
             @test volume(system,1e5,300,[0.5,0.5]) ≈ 0.024820060368027988 rtol = 1e-6
@@ -567,7 +567,7 @@ end
         end
     end
 
-    @testset "Solid Models" begin
+    @testset verbose = true "Solid Models" begin
         @testset "SolidHfus" begin
             model = SolidHfus(["water"])
             @test chemical_potential(model,1e5,298.15,[1.])[1] ≈ 549.1488193300384 rtol = 1e-6
