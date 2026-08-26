@@ -24,7 +24,7 @@ The algorithm finishes when SS or the Gibbs minimization converges and all resul
 
 If the result of the phase equilibria is not stable, then it proceeds to add/remove phases again, for a maximum of `phase_iters` iterations.
 
-### Keyword Arguments:
+## Keyword Arguments:
 
 - `K0` (optional), initial guess for the constants K.
 - `x0` (optional), initial guess for the composition of phase x.
@@ -1125,7 +1125,7 @@ function tp_flash_multi_neq!(model,p,T,z,_result,ss_cache,options)
     opt_options = OptimizationOptions(maxiter = 30)
     f = multi_g_obj(model,p,T,z,_result,ss_cache)
     if options.second_order
-        sol = Solvers.optimize(f,x,LineSearch(Newton2(x),Backtracking()),opt_options)
+        sol = Solvers.optimize(f,x,LineSearch(Newton2(x)),opt_options)
         gmix = Solvers.x_minimum(sol)
         F = Solvers.x_sol(sol)
     else
