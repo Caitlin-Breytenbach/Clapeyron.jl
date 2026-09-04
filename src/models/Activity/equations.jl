@@ -9,12 +9,14 @@ function lnγ_impl! end
 has_lnγ_impl(model::T) where T = hasmethod(lnγ_impl!,Tuple{Any,T,Any,Any,Any})
 
 function excess_gibbs_free_energy(model::ActivityModel,p,T,z)
+    p̄,T̄,z̄ = ustrip(p,pressure),ustrip(T,temperature),uzstrip(model,z)
+    RT = Rgas(model)*T̄
     if has_lnγ_impl(model)
-        lnγx = lnγ(model,p,T,z)
-        return Rgas(model)*T*dot(z,lnγx)
+        lnγx = lnγ(model,p̄,T̄,z̄)
+        return RT*dot(z̄,lnγx)
     else
-        γ = activity_coefficient(model,p,T,z)
-        return Rgas(model)*T*sum(z[i]*log(γ[i]) for i ∈ @comps)
+        γ = activity_coefficient(model,p̄,T̄,z̄)
+        return RT*sum(z̄[i]*log(γ[i]) for i ∈ @comps)
     end
 end
 
@@ -33,7 +35,8 @@ end
 
 #for use in models that have Gibbs energy defined.
 function activity_coefficient(model::ActivityModel,p,T,z)
-    lnγx = lnγ(model,p,T,z)
+    p̄,T̄,z̄ = ustrip(p,pressure),ustrip(T,temperature),uzstrip(model,z)
+    lnγx = lnγ(model,p̄,T̄,z̄)
     if ismutable(lnγx)
         lnγx .= exp.(lnγx)
         return lnγx
@@ -58,7 +61,8 @@ function ng_E_reduced(model,p,T,z)
     excess_gibbs_free_energy(model,p,T,@view(z[1:nc]))/(Rgas(model)*T)
 end
 
-function lnγ(model::ActivityModel,p,T,z,cache::TT = nothing) where TT
+function lnγ(model::ActivityModel,_p,_T,_z,cache::TT = nothing) where TT
+    p,T,z = ustrip(_p,pressure),ustrip(_T,temperature),uzstrip(model,_z)
     X = gradient_type(model,T,z)
     nc = length(z)
     if has_lnγ_impl(model)
@@ -75,7 +79,7 @@ function lnγ(model::ActivityModel,p,T,z,cache::TT = nothing) where TT
             return out
         end
     else
-        V = p
+        V = zero(primalval(T))
         fun = @deferred_Z(ng_E_reduced,∂₁f)
         if cache isa Tuple
             result,aux,lnγ,∂lnγ∂n,∂lnγ∂T,_,_,hconfig = cache
@@ -97,8 +101,9 @@ function lnγ(model::ActivityModel,p,T,z,cache::TT = nothing) where TT
 end
 
 function activity_coefficient_impl(model::ActivityModel,p,T,z,μ_ref,reference,phase,threaded,vol0)
+    p̄,T̄,z̄ = ustrip(p,pressure),ustrip(T,temperature),uzstrip(model,z)
     #TODO: what to do if the reference is not pure?
-    return activity_coefficient(model,p,T,z)
+    return activity_coefficient(model,p̄,T̄,z̄)
 end
 
 reference_chemical_potential_type(model::ActivityModel) = :zero
@@ -119,12 +124,12 @@ function test_activity_coefficient(model::ActivityModel,p,T,z)
     return exp.(Solvers.gradient(x->excess_gibbs_free_energy(model,p,T,x),z)/(R̄*T))::X
 end
 
-saturation_model(model::ActivityModel) = __act_to_gammaphi(model,saturation_model)
+@inline saturation_model(model::ActivityModel) = saturation_model(__act_to_gammaphi(model,saturation_model))
 
 function idealmodel(model::T) where T <: ActivityModel
     if hasfield(T,:puremodel)
         puremodel = model.puremodel.model
-        return idealmodel(model.puremodel.model)
+        return idealmodel(puremodel)
     else
         return BasicIdeal()
     end
@@ -189,13 +194,12 @@ end
 function ∂lnγ∂n(model,p,T,z,cache = nothing)
     nc = length(z)
     RT = Rgas(model)*T
-    n = sum(z)
     fun_g(w) = excess_gibbs_free_energy(model,p,T,@view(w[1:nc]))/RT
     function fun_lnγ(out,w)
         Clapeyron.lnγ(model,p,T,@view(w[1:nc]),@view(out[1:nc]))
         return out
     end
-    if cache == nothing
+    if cache === nothing
         if has_lnγ_impl(model)
             lnγ = zeros(Base.promote_eltype(model,p,T,z),nc)
             ∂lnγ∂ni = ForwardDiff.jacobian!(lnγ,fun_lnγ,z)
@@ -238,13 +242,12 @@ end
 function ∂lnγ∂n∂T(model,p,T,z,cache = nothing)
     nc = length(z)
     RT = Rgas(model)*T
-    n = sum(z)
     fun_g(w) = excess_gibbs_free_energy(model,p,w[nc+1],@view(w[1:nc]))/(Rgas(model)*w[nc + 1])
     function fun_lnγ(out,w)
         Clapeyron.lnγ(model,p,w[1:nc+1],@view(w[1:nc]),@view(out[1:nc]))
         return out
     end
-    if cache == nothing
+    if cache === nothing
         if has_lnγ_impl(model)
             lnγ = zeros(Base.promote_eltype(model,p,T,z),nc)
             aux = similar(lnγ,nc+1)
@@ -306,10 +309,8 @@ end
 
 function ∂lnγ∂T(model,p,T,z,cache = nothing)
     nc = length(z)
-    RT = Rgas(model)*T
-    n = sum(z)
     dgEdt(w) = dG_EdT(model,p,T,@view(w[1:nc]))
-    if cache == nothing
+    if cache === nothing
         if has_lnγ_impl(model)
             out = zeros(Base.promote_eltype(model,p,T,z))
             ∂lnγ∂T = ForwardDiff.derivative!(out,lnγ_impl!,T)
@@ -361,6 +362,7 @@ function __act_to_gammaphi(model::ActivityModel,method,ignore = false)
         end
     end
     γϕmodel = GammaPhi(components,model,pure)
+    return γϕmodel
 end
 
 for f in (:bubble_pressure,:bubble_temperature,:dew_pressure,:dew_temperature)
@@ -440,7 +442,6 @@ function LLE(model::ActivityModel,T;v0=nothing)
         end
     end
 
-    len = length(vv0)
     f!(F,z) = Obj_LLE(model, F, T, @view(z[1:nc-1]), @view(z[nc:end]))
     r  = Solvers.nlsolve(f!,vv0,LineSearch(Newton(),Backtracking()))
     sol = Solvers.x_sol(r)
@@ -473,9 +474,8 @@ end
 reference_state(model::ActivityModel) = reference_state(model.puremodel)
 
 # Thermodynamic factor
-function thermodynamic_factor(model::ActivityModel, p, T, z)
+function γ_thermodynamic_factor(model::ActivityModel, p, T, z)
     N = length(model)
-    N == 1 && return one(T)
     x = z ./ sum(z)
     xN1 = @view x[1:N-1]
     

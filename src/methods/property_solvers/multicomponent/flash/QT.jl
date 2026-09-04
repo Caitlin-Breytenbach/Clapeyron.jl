@@ -14,7 +14,7 @@ end
 function qt_flash_x0(model,β,T,z,method::FlashMethod)
     verbose = get_verbosity(method)
     ∑z = sum(z)
-    if method.p0 == nothing
+    if method.p0 === nothing
         if 0 <= β <= 0.01
             verbose && @info "vapour fraction below 0.01, using bubble pressure directly"
             x = z ./ ∑z
@@ -103,7 +103,8 @@ function init_preferred_method(method::typeof(qt_flash),model::EoSModel,kwargs)
     GeneralizedXYFlash(;kwargs...)
 end
 
-function qt_flash(model,β,T,z,method::FlashMethod)
+function qt_flash(model,β,_T,_z,method::FlashMethod)
+    T,z = ustrip(_T,temperature),uzstrip(model,_z)
     check_arraysize(model,z)
 
     if z isa SingleComp || length(model) == 1
