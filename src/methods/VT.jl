@@ -14,8 +14,12 @@ V is the volume `[m³]`
 
 `pressure(model, result::FlashResult)` will return the equilibrium pressure stored in the `result` argument.
 """
-function pressure(model::EoSModel, V, T, z=SA[1.])
-    return VT_pressure(model, V, T, z)
+function pressure(model::EoSModel, V, T, z=SA[1.]; output = nothing)
+    T̄,z̄ = ustrip(T,temperature),uzstrip(model,z)
+    v̄ = uvstrip(model,V,z̄)
+    p = VT_pressure(model, v̄, T̄, z̄)
+    UNIT_TYPE = unit_system(V,T,z,output)
+    return with_output_unit(p,(UNIT_TYPE,output),pressure)
 end
 
 """
@@ -54,7 +58,6 @@ function VT_entropy(model::EoSModel, V, T, z::AbstractVector=SA[1.])
 end
 
 VT_mass_entropy(model::EoSModel,V, T, z::AbstractVector = SA[1.0]) = VT_entropy(model,V,T,z)/molecular_weight(model,z)
-
 
 function VT_entropy_res(model::EoSModel, V, T, z=SA[1.])
     f = @deferred_T(eos_res,VT_entropy_res)
@@ -120,7 +123,7 @@ function VT_gibbs_energy(model::EoSModel, V, T, z::AbstractVector=SA[1.], p = no
         return VT_gibbs_energy(idealmodel(model), V, T, z)
     end
 
-    if p == nothing
+    if p === nothing
         A,∂A∂V = f∂fdV(model,V,T,z)
     else
         A = eos(model,V,T,z)
@@ -197,6 +200,7 @@ function VT_adiabatic_index(model::EoSModel, V, T, z=SA[1.])
         return 1 - ∂²A∂V∂T*∂²A∂V∂T/(∂²A∂V²*∂²A∂T²)
     end
 end
+has_units(::typeof(VT_adiabatic_index)) = Val(false)
 
 function VT_isothermal_compressibility(model::EoSModel, V, T, z=SA[1.])
     if iszero(1/V) || is_idealmodel(model)
@@ -271,6 +275,7 @@ function VT_compressibility_factor(model::EoSModel, V, T, z=SA[1.],p = nothing)
     end
 end
 VT_use_p(::typeof(VT_compressibility_factor)) = true
+has_units(::typeof(VT_compressibility_factor)) = Val(false)
 
 """
     second_virial_coefficient(model::EoSModel, T, z=SA[1.])
@@ -284,8 +289,11 @@ B = lim(ρ->0)[∂Aᵣ/∂ρ]
 ```
 where `Aᵣ` is the residual Helmholtz energy.
 """
-function second_virial_coefficient(model::EoSModel, T, z=SA[1.])
-   return second_virial_coefficient_impl(model,T,z)
+function second_virial_coefficient(model::EoSModel, T, z=SA[1.]; output = nothing)
+    T̄,z̄ = ustrip(T,temperature),uzstrip(model,z)
+    UNIT_TYPE = unit_system(T,T,z,output)    
+    B = second_virial_coefficient_impl(model,T̄,z̄)
+    return with_output_unit(B,(UNIT_TYPE,output),volume)
 end
 
 function second_virial_coefficient_impl(model::EoSModel, T, z = SA[1.0])
@@ -394,7 +402,9 @@ Calculated as:
 1.  G. Venkatarathnama, L.R. Oellrich, Identification of the phase of a fluid using partial derivatives of pressure, volume,and temperature without reference to saturation properties: Applications in phase equilibria calculations, Fluid Phase Equilibria 301 (2011) 225–233
 """
 function pip(model::EoSModel, V, T, z=SA[1.0])
-    Π,∂p∂V = _pip(model,V,T,z)
+    T̄,z̄ = ustrip(T,temperature),uzstrip(model,z)
+    v̄ = uvstrip(model,V,z̄)
+    Π,∂p∂V = _pip(model,v̄,T̄,z̄)
     return Π
 end
 
@@ -407,6 +417,9 @@ function _pip(model::EoSModel, V, T, z=SA[1.0])
     return Π,∂p∂V
 end
 
+has_units(::typeof(VT_pip)) = Val(false)
+has_units(::typeof(pip)) = Val(false)
+
 function VT_fundamental_derivative_of_gas_dynamics(model::EoSModel, V, T, z=SA[1.0])
     Mr = molecular_weight(model,z)
     d²A = f_hess(model,V,T,z)
@@ -416,12 +429,12 @@ function VT_fundamental_derivative_of_gas_dynamics(model::EoSModel, V, T, z=SA[1
     c =  V*sqrt((∂²A∂V²-∂²A∂V∂T*∂²A∂V∂T/∂²A∂T²)/Mr)
     A(x) = eos(model,V,x,z)
     ∂A∂T(x) = Solvers.derivative(A,x)
-    ∂²A∂T²(x) = -T*Solvers.derivative(∂A∂T,x)
-    Cᵥ,∂Cᵥ∂T = Solvers.f∂f(∂²A∂T²,T)
+    _∂²A∂T²(x) = -T*Solvers.derivative(∂A∂T,x)
+    Cᵥ,∂Cᵥ∂T = Solvers.f∂f(_∂²A∂T²,T)
     _∂2p = ∂2p(model,V,T,z)
     hess_p, grad_p, _ = _∂2p
     ∂²p∂T²,∂²p∂V²,∂²p∂V∂T = hess_p[2,2],hess_p[1,1],hess_p[1,2]
-    ∂p∂T,∂p∂V = grad_p[2],grad_p[1]
+    ∂p∂T,_ = grad_p[2],grad_p[1]
     Γ₁ = ∂²p∂V²
     Γ₂ = (-3*T/Cᵥ)*∂p∂T*∂²p∂V∂T
     xx = ((T/Cᵥ)*∂p∂T)
@@ -577,7 +590,7 @@ export pressure
 export second_virial_coefficient,cross_second_virial,equivol_cross_second_virial
 @public temperature, pip
 
-const CLAPEYRON_PROPS = [:temperature,:volume, :pressure, :entropy, :internal_energy, :enthalpy, :gibbs_free_energy, :helmholtz_free_energy,
+const CLAPEYRON_PROPS = [:temperature, :volume, :pressure, :entropy, :internal_energy, :enthalpy, :gibbs_free_energy, :helmholtz_free_energy,
                     :entropy_res, :internal_energy_res, :enthalpy_res, :gibbs_free_energy_res, :helmholtz_free_energy_res,
                     :helmholtz_energy,:gibbs_energy,
                     #mass properties, first order
@@ -586,7 +599,7 @@ const CLAPEYRON_PROPS = [:temperature,:volume, :pressure, :entropy, :internal_en
                     #second derivative order properties
                     :isochoric_heat_capacity, :isobaric_heat_capacity, :adiabatic_index,
                     :isothermal_compressibility, :isentropic_compressibility, :speed_of_sound,
-                    :isobaric_expansivity, :joule_thomson_coefficient, :inversion_temperature,
+                    :isobaric_expansivity, :joule_thomson_coefficient,
                     #second derivative order, mass properties
                     :mass_isobaric_heat_capacity,:mass_isochoric_heat_capacity,
                     #higher derivative order properties
@@ -626,7 +639,7 @@ The user must be sure to give a physically sensible volume value.
 For calculations in volume-temperature basis that check and calculate if there are multiple phases, use the [`VT`] module instead.
 """
 module VT0
-    using Clapeyron: Clapeyron, CLAPEYRON_PROPS
+    using Clapeyron: Clapeyron
     for prop in Clapeyron.CLAPEYRON_PROPS
         VT_prop = Clapeyron.VT_symbol(prop)
         @eval begin

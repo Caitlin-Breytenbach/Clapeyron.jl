@@ -21,7 +21,7 @@ julia> getfileextension("~/Desktop/text.txt")
 ```
 """
 function getfileextension(filepath::AbstractString)
-    path,ext = splitext(filepath)
+    _,ext = splitext(filepath)
     return String(chop(ext,head=1,tail=0))
 end
 
@@ -94,7 +94,7 @@ end
 flattenfilepaths(locations) = flattenfilepaths(locations,String[])
 
 function flattenfilepaths(locations,userlocations::Vector{String})
-    if length(locations) == 0 && length(userlocations) == 0
+    if isempty(locations) && isempty(userlocations)
         return String[]
     end
     defaultpaths = reduce(vcat,getpaths.(locations; relativetodatabase=true),init = String[])
@@ -150,51 +150,34 @@ function is_inline_csv(filepath)
     return any(startswith(filepath,kw) for kw in SKIP_GETPATHS)
 end
 
-function defaultmissing(array::Array{<:Number},defaultvalue = zero(eltype(array)))
-    return deepcopy(array),Array(ismissing.(array))
-end
+defaultmissing(array::Array{<:Union{Missing,Number}}) = defaultmissing(array,zero(nonmissingtype(eltype(array))))
+defaultmissing(array::Array{Missing}) = defaultmissing(array,0.0)
+defaultmissing(array) = defaultmissing(array,"")
 
-function defaultmissing(array::Array{<:AbstractString},defaultvalue = "")
-    return string.(array),Array(ismissing.(array))
+function defaultmissing(array, defaultvalue::T) where T
+    V = eltype(array)
+    nonmissing = Array{Bool}(undef,size(array))
+    if nonmissingtype(V) == V && V != Any #fast shortcut
+        nonmissing .= false
+        return array,nonmissing
+    end
+    #at this point, we have an array with one or more missing values. iterate on each.
+    result = similar(array,T)
+    for i in eachindex(array)
+        is_missing = ismissing(array[i])
+        if is_missing
+            result[i] = defaultvalue
+        else
+            if T == String
+                result[i] = convert(String,string(array[i]))
+            else
+                result[i] = convert(T,array[i])
+            end
+        end
+        nonmissing[i] = is_missing
+    end
+    return result,nonmissing
 end
-
-function defaultmissing(array::Array{String},defaultvalue = "")
-    return deepcopy(array),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{<:Union{Missing, AbstractString}},defaultvalue="")
-    return string.(coalesce.(array,defaultvalue)),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{<:Union{Missing, Number}},defaultvalue=zero(eltype(array)))
-    return coalesce.(array,defaultvalue),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{Union{Missing, Bool}},defaultvalue=zero(eltype(array)))
-    return [coalesce(i,defaultvalue) for i in array],Array(ismissing.(array))
-end
-
-#if an array with only missings is passed, the Resulting ClapeyronParam will be
-#of the type that this function returns
-function defaultmissing(array::Array{Missing},defaultvalue=0.0)
-    return coalesce.(array,defaultvalue),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{<:Union{Missing,Number,AbstractString}},defaultvalue="")
-    return string.(coalesce.(array,defaultvalue)),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{Any},defaultvalue="")
-    return string.(coalesce.(array,defaultvalue)),Array(ismissing.(array))
-end
-
-function defaultmissing(array::Array{T},defaultvalue::T2) where T<:Union{T2,Missing} where T2
-    coalesce.(array,Ref(defaultvalue)),Array(ismissing.(array))
-end
-function defaultmissing(array)
-    throw("Unsupported array element type  $(typeof(array))")
-end
-
 
 """
     singletopair(params::Vector,outputmissing=zero(T))
@@ -245,7 +228,6 @@ low_color(x) = low_color(string(x))
 
 function __pad_val(i,imax::Int)
     s = repr(i,context = :compact => true)
-    ls = length(s)
     return rpad(s,imax)
 end
 
@@ -256,7 +238,7 @@ function userlocation_merge(loc1,loc2)
         return loc2
     elseif loc1 isa Vector{String} && loc2 isa Vector{String}
         return append!(loc1,loc2)
-    elseif loc1 isa Vector{String} && length(loc1) == 0
+    elseif loc1 isa Vector{String} && isempty(loc1)
         return loc2
     elseif loc1 isa Vector{String} && can_nt(loc2)
         return loc2
