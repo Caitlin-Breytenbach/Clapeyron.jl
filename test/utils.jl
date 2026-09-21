@@ -37,6 +37,13 @@ function test_gibbs_duhem(model,V,T,z;rtol = 1e-14)
     end
 end
 
+function test_gibbs_duhem(model::Clapeyron.ActivityModel,V,T,z;rtol = 1e-14)
+    for i in (2.0,3.0,5.0,7.0,11.0)
+        gE₀ = Clapeyron.excess_gibbs_free_energy(model,V,T,z)
+        @test i*gE₀ ≈ Clapeyron.excess_gibbs_free_energy(model,V,T,i*z) rtol = rtol
+    end
+end
+
 function test_volume(model,p,T,z = Clapeyron.SA[1.0];rtol = 1e-8,phase = :unknown)
     v = volume(model,p,T,z)
     @test p ≈ Clapeyron.pressure(model,v,T,z) rtol = rtol
@@ -232,4 +239,52 @@ return SAFTgammaMie{BasicIdeal, Float64}(
         BasicIdeal(), 
         AssocOptions(1.0e-12, 1.0e-12, 1000, 0.5, :nocombining, false), ["10.1063/1.4819786", "10.1080/00268976.2015.1029027"]), :default, 
         AssocOptions(1.0e-12, 1.0e-12, 1000, 0.5, :nocombining, false), ["10.1063/1.4851455", "10.1021/je500248h"])
+end
+
+function test_excess_gibbs_free_energy(model::Clapeyron.ActivityModel,p,T,z)
+    γ = Clapeyron.activity_coefficient(model,p,T,z)
+    return Clapeyron.Rgas(model)*T*sum(z[i]*log(γ[i]) for i ∈ eachindex(z))
+end
+
+function test_activity_coefficient(model::Clapeyron.ActivityModel,p,T,z)
+    X = Clapeyron.gradient_type(model,T+p,z)
+    return exp.(Clapeyron.Solvers.gradient(x->Clapeyron.excess_gibbs_free_energy(model,p,T,x),z)/(Clapeyron.Rgas(model)*T))::X
+end
+
+struct VanLaar_GE <: Clapeyron.ActivityModel
+    A12::Float64
+    A21::Float64
+end
+
+function Clapeyron.excess_gibbs_free_energy(model::VanLaar_GE,p,T,z)
+    A12 = model.A12 + 1e-5/T
+    A21 = model.A21 + 2e-5/T
+    ge = (A12*A21*z[1]*z[2]) / (A12*z[1] + A21*z[2])
+    return Clapeyron.Rgas()*T*ge
+end
+
+struct VanLaar_lngamma <: Clapeyron.ActivityModel
+    A12::Float64
+    A21::Float64
+end
+
+function Clapeyron.lnγ_impl!(lnγ,model::VanLaar_lngamma,V,T,z)
+    A12 = model.A12 + 1e-5/T
+    A21 = model.A21 + 2e-5/T
+    ax = A12*z[1] + A21*z[2]
+    lnγ[1] = A12*(A21*z[2]/ax)^2
+    lnγ[2] = A21*(A12*z[1]/ax)^2
+    return lnγ
+end
+
+Base.length(::VanLaar_GE) = 2
+Base.length(::VanLaar_lngamma) = 2
+
+#used to reproduce old values of UNIFACFV and UNIFACFVPoly models
+function activity_old_unifacfv(model::Clapeyron.UNIFACFVModel, p, T, z)
+    RT = Rgas(model)*T
+    lnγ_comb = Clapeyron.lnγ_comb_old(model, p, T, z)
+    lnγ_res  = Clapeyron.ForwardDiff.gradient(n -> Clapeyron.excess_g_res(model, p, T, n), z) ./ RT
+    lnγ_FV   = Clapeyron.ForwardDiff.gradient(n -> Clapeyron.excess_g_FV(model, p, T, n), z) ./ RT
+    return exp.(lnγ_comb .+ lnγ_res .+ lnγ_FV)
 end
