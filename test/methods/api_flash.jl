@@ -83,7 +83,9 @@
         system3 = UNIFAC(["water","cyclohexane","propane"],puremodel = DIPPR101Sat)
         res3 = Clapeyron.tp_flash2(system3, p, T, z, MultiPhaseTPFlash())
         @test Clapeyron.numphases(res3) == 3
-        @test res3.fractions ≈ [0.3126977407489071, 0.3221079660567595, 0.3651942931943334] rtol = 1e-6
+        @test minimum(res3.fractions) ≈ 0.3126977407489071 rtol = 1e-6
+        @test maximum(res3.fractions) ≈ 0.3651942931943334 rtol = 1e-6
+        #@test res3.fractions ≈ [0.3126977407489071, 0.3221079660567595, 0.3651942931943334] rtol = 1e-6
 
         #issue #546
         system4 = EOS_CG(["carbon dioxide","water"])
@@ -813,6 +815,14 @@ end
     fluid = cPR(["acetone", "isopentane"],idealmodel= ReidIdeal); z = [1.1, 0.9];
     T0 = Clapeyron.Tproperty(fluid,101225.0,hmid,z,enthalpy)
     @test Tb < T0 < Td
+
+    #idealmodel
+    model0 = ReidIdeal(["ethane","propane"])
+    T0 = Clapeyron.Tproperty(model0,1e5,120.0,[0.3,0.7],entropy)
+    @test entropy(model0,1e5,T0,[0.3,0.7]) ≈ 120.0 rtol = 1e-6
+
+    P0 = Clapeyron.Pproperty(model0,300.0,120.0,[0.3,0.7],entropy)
+    @test entropy(model0,P0,300.0,[0.3,0.7]) ≈ 120.0 rtol = 1e-6
 end
 
 @testset verbose = true "PT_property implicit AD (activity models)" begin

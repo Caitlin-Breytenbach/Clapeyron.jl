@@ -6,20 +6,20 @@
     @testset "Margules" begin
         system = Margules(["methanol","water"])
        #= @test Clapeyron.activity_coefficient(system,p,T,z)[1] #≈ 1.530046633499114 rtol = 1e-6
-        @test Clapeyron.activity_coefficient(system,p,T,z) #≈ Clapeyron.test_activity_coefficient(system,p,T,z)  rtol = 1e-6
-        =#@test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ Clapeyron.test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
+        @test Clapeyron.activity_coefficient(system,p,T,z) #≈ test_activity_coefficient(system,p,T,z)  rtol = 1e-6
+        =#@test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
     end
     @testset "VanLaar" begin
         system = VanLaar(["methanol","water"])
      #=   @test Clapeyron.activity_coefficient(system,p,T,z)[1] #≈ 1.530046633499114 rtol = 1e-6
-        @test Clapeyron.activity_coefficient(system,p,T,z) #≈ Clapeyron.test_activity_coefficient(system,p,T,z)  rtol = 1e-6
-        =#@test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ Clapeyron.test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
+        @test Clapeyron.activity_coefficient(system,p,T,z) #≈ test_activity_coefficient(system,p,T,z)  rtol = 1e-6
+        =#@test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
     end
     @testset "Wilson" begin
         system = Wilson(["methanol","benzene"])
         @test Clapeyron.activity_coefficient(system,p,T,z)[1] ≈ 1.530046633499114 rtol = 1e-6
-        @test Clapeyron.activity_coefficient(system,p,T,z) ≈ Clapeyron.test_activity_coefficient(system,p,T,z)  rtol = 1e-6
-        @test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ Clapeyron.test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
+        @test Clapeyron.activity_coefficient(system,p,T,z) ≈ test_activity_coefficient(system,p,T,z)  rtol = 1e-6
+        @test Clapeyron.excess_gibbs_free_energy(system,p,T,z) ≈ test_excess_gibbs_free_energy(system,p,T,z)  rtol = 1e-6
     end
 
     @testset "NRTL" begin
@@ -50,6 +50,7 @@
     @testset "UNIFAC" begin
         system = UNIFAC(["methanol","benzene"])
         @test Clapeyron.activity_coefficient(system,p,T,z)[1] ≈ 1.5322232657797463 rtol = 1e-6
+        @test Clapeyron.excess(system,p,T,z,enthalpy) ≈ -T*T*Clapeyron.Solvers.derivative(_T -> Clapeyron.excess_gibbs_free_energy(system,p,_T,z)/_T, T) rtol = 1e-6
         #when fast UNIFAC works, it should pass this test.
         # system2 = UNIFAC(["methanol","benzene"])
         # prop2 = ()
@@ -59,7 +60,7 @@
 
     @testset "UNIFAC2" begin
         system = UNIFAC2([("acetaldehyde", ["CH3" => 1, "HCO" => 1]),("acetonitrile", ["CH3CN" => 1])]; puremodel=BasicIdeal())
-        @test log(Clapeyron.activity_coefficient(system, NaN, 323.15, [0.5,0.5])[1]) ≈ 0.029527741236233 rtol = 1e-6
+        @test Clapeyron.lnγ(system, NaN, 323.15, [0.5,0.5])[1] ≈ 0.029527741236233 rtol = 1e-6
     end
 
     @testset "ogUNIFAC" begin
@@ -69,17 +70,22 @@
 
     @testset "ogUNIFAC2" begin
         system = ogUNIFAC2([("R22",["HCCLF2" => 1]),("carbon disulfide",["CS2" => 1])], puremodel=BasicIdeal())
-        @test log(Clapeyron.activity_coefficient(system, NaN, 298.15, [0.3693,0.6307])[1]) ≈ 0.613323250984226 rtol = 1e-6
+        @test Clapeyron.lnγ(system, NaN, 298.15, [0.3693,0.6307])[1] ≈ 0.613323250984226 rtol = 1e-6
     end
 
+    #on 0.6.28 and before, there was a bug in UNIFAC-FV combinatorial term
+    #there was a missing division by x in the activity coefficient, making the combinatorial term non-consistent (a symmetric mixture had non-zero combinatorial gibbs energy)
+    #0.6.29 fixes this, but it changes the results of the tests
     @testset "UNIFAC-FV" begin
         system = UNIFACFV(["PMMA","PS"])
-        @test Clapeyron.activity_coefficient(system,p,T,z)[1] ≈ 8.63962025235759 rtol = 1e-6
+        @test activity_old_unifacfv(system,p,T,z)[1] ≈ 8.63962025235759 rtol = 1e-6
+        @test activity_coefficient(system,p,T,z)[1] ≈ 4.091459375206823 rtol = 1e-6
     end
 
     @testset "UNIFAC-FV-poly" begin
         system = UNIFACFVPoly(["PMMA","PS"])
-        @test Clapeyron.activity_coefficient(system,p,T,z)[1] ≈ 4.8275769947121985 rtol = 1e-6
+        @test activity_old_unifacfv(system,p,T,z)[1] ≈ 4.8275769947121985 rtol = 1e-6
+        @test activity_coefficient(system,p,T,z)[1] ≈ 2.3608811667620424 rtol = 1e-6
     end
 
     @testset "FH" begin
@@ -195,15 +201,6 @@ end
         test_zero_alloc1(system)
         @test Clapeyron.a_ideal(system,V,T,z) ≈ 7.932205569922042 rtol = 1e-6
         @test Clapeyron.ideal_consistency(system,V,T,z) ≈ 0.0 atol = 1e-14
-        
-        #issue 558
-        url_refprop = "https://raw.githubusercontent.com/usnistgov/fastchebpure/50af5c154a113ac27a2c0a1c3538bc4f43a73a66/teqp_REFPROP10/dev/fluids/"
-        names = ["13BUTADIENE"]
-        _comps = Clapeyron.Downloads.download.(url_refprop .* names .* ".json") .|> read .|> String
-        mixing = Clapeyron.init_model(Clapeyron.AsymmetricMixing,names,String[],false)
-        model558 = MultiFluid(_comps; mixing, coolprop_userlocations=false)
-        @test molar_density(model558, 9.259e3, 220.; phase=:liquid) ≈ 13029.070044557742 rtol = 1e-6
-        @test model558.components == names
     end
 
     @testset "Aly-Lee" begin
@@ -371,6 +368,21 @@ end
         @test Clapeyron.a_res(model4,V,T,z1) ≈ -0.017855323645451636 rtol = 1e-6
         model5 = SingleFluid("water",Rgas = 10.0)
         @test Rgas(model5) == 10.0
+
+        
+        #issue 558
+        url_refprop = "https://raw.githubusercontent.com/usnistgov/fastchebpure/50af5c154a113ac27a2c0a1c3538bc4f43a73a66/teqp_REFPROP10/dev/fluids/"
+        names = ["13BUTADIENE"]
+        _comps = Clapeyron.Downloads.download.(url_refprop .* names .* ".json") .|> read .|> String
+        mixing = Clapeyron.init_model(Clapeyron.AsymmetricMixing,names,String[],false)
+        model558 = MultiFluid(_comps; mixing, coolprop_userlocations=false)
+        @test molar_density(model558, 9.259e3, 220.; phase=:liquid) ≈ 13029.070044557742 rtol = 1e-6
+        @test model558.components == names
+
+        #issue 631
+        #model631 = SingleFluid("helium")
+        #@test volume(model631,10e6,5.195300013635951) ≈ 1.9475072054583694e-5 rtol = 1e-6
+        #@test volume(model631,20e6,5.195300013635951) ≈ 1.7145534637196815e-5 rtol = 1e-6
     end
     @printline
     end
