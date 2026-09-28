@@ -342,6 +342,11 @@ end
         @test Clapeyron.a_res(system, V, T)  ≈ -34.16747927719535 rtol = 1e-6
     end
 
+    @testset "Tillner-Roth-Friend" begin
+        system = TillnerRothFriend()
+        @test Clapeyron.a_res(system, 3e-2, 298.15, [0.4,0.6]) ≈ -0.018556794949535844 rtol = 1e-6
+    end
+
     @testset "multiparameter misc" begin
         T = 300.0
         V = 1/200
@@ -378,11 +383,6 @@ end
         model558 = MultiFluid(_comps; mixing, coolprop_userlocations=false)
         @test molar_density(model558, 9.259e3, 220.; phase=:liquid) ≈ 13029.070044557742 rtol = 1e-6
         @test model558.components == names
-
-        #issue 631
-        #model631 = SingleFluid("helium")
-        #@test volume(model631,10e6,5.195300013635951) ≈ 1.9475072054583694e-5 rtol = 1e-6
-        #@test volume(model631,20e6,5.195300013635951) ≈ 1.7145534637196815e-5 rtol = 1e-6
     end
     @printline
     end
