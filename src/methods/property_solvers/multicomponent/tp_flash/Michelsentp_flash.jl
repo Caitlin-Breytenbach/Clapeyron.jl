@@ -85,6 +85,30 @@ function Solvers.primalval(method::MichelsenTPFlash{T}) where {T}
     end
 end
 
+function tp_flash_pure_michelsen(model,p,T,z)
+    ps,_,_ = extended_saturation_pressure(model,T)
+    _1 = one(Base.promote_eltype(model,p,T,z))
+    _0 = zero(_1)
+    n = sum(z)
+    if ps > p
+        βi = [_0,_1*n]
+        vv = volume(model,p,T,z,phase = :v)
+        vl = vv
+    else
+        βi = [_1*n,_0]
+        vl = volume(model,p,T,z,phase = :l)
+        vv = vl
+    end
+    vapour_idx = 2
+    volumes = [vl,vv]
+    comps = [[1.0],[1.0]]
+    flash0 = FlashResult(comps,βi,volumes,FlashData(p,T,_0,vapour_idx))
+    g = first(modified_gibbs(model,flash0))
+    return FlashResult(comps,βi,volumes,FlashData(p,T,g,vapour_idx))
+end
+
+tp_flash_pure(model,p,T,z,method::MichelsenTPFlash) = tp_flash_pure_michelsen(model,p,T,z)
+
 numphases(::MichelsenTPFlash) = 2
 
 function MichelsenTPFlash(;equilibrium = :unknown,
@@ -420,7 +444,7 @@ function tp_flash_michelsen(model_full::EoSModel, p, T, z_full, method = Michels
         ub .= @view z[in_equilibria]
         lb = similar(ny_var0)
         lb .= 0
-        opt_options = OptimizationOptions(f_abstol = 0.0,f_reltol = 0.0,g_reltol = K_tol,maxiter = 100)
+        opt_options = OptimizationOptions(f_abstol = 0.0,f_reltol = 0.0,g_reltol = K_tol,g_abstol = 1e-8,maxiter = 100)
         if second_order
             sol = Solvers.optimize(flash_obj, ny_var0, LineSearch(Newton2(ny_var0),Solvers.BoundedLineSearch(lb,ub)),opt_options)
         else
