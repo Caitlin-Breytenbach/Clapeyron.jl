@@ -15,6 +15,14 @@ struct LJRef{T,I,LJ} <: LJCorrespondingStatesModel
     ljmodel::LJ
     molecular_units::Bool
 end
+
+function show_info(io,model::LJRef) 
+    molecular_units = model.molecular_units
+    if molecular_units
+        println(io)
+        print(io," molecular units: ",molecular_units)
+    end
+end
 """
     LJRef <: CorrespondingStatesModel
 
