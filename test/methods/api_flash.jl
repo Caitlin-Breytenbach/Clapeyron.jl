@@ -88,6 +88,35 @@
         @test flash0[3] ≈ flash_RR[3] rtol = 1e-11
     end
 
+    @testset "Multiphase duplicate removal: phase count" begin
+        # The two-phase PR state used below, with its liquid phase duplicated.
+        # Test removal directly: no optimizer search or external fixture file.
+        model_dup = PR(["IsoButane", "n-Butane", "n-Pentane", "n-Hexane"])
+        p_dup, T_dup = 1e5, 284.4
+        x_dup = [0.22207665084342074, 0.2374113008465883,
+                 0.2658557804182571, 0.27465626789173386]
+        y_dup = [0.4973665831146864, 0.36152041533328994,
+                 0.10953725669913524, 0.03157574485288829]
+        beta_dup = [0.8985674887337903, 0.10143251126620967]
+        vl_dup = volume(model_dup, p_dup, T_dup, x_dup; phase = :liquid)
+        vv_dup = volume(model_dup, p_dup, T_dup, y_dup; phase = :vapour)
+        result_dup = Clapeyron.FlashResult(p_dup, T_dup,
+            [copy(x_dup), copy(x_dup), copy(y_dup)],
+            [beta_dup[1]/2, beta_dup[1]/2, beta_dup[2]],
+            [vl_dup, vl_dup, vv_dup]; sort = false)
+        z_dup = sum(result_dup.fractions .* result_dup.compositions)
+        @test Clapeyron.findfirst_duplicate_phases(result_dup, false) == (1, 2)
+        # After the duplicate is merged, strategy B must use the new count.
+        # With the stale count this call throws BoundsError at phase index 3.
+        Clapeyron._remove_phases!(model_dup, p_dup, T_dup, z_dup,
+            (result_dup, Ref(0)), nothing, nothing)
+        @test Clapeyron.numphases(result_dup) == 2
+        @test result_dup.fractions ≈ beta_dup
+        @test all(isapprox.(result_dup.compositions, [x_dup, y_dup]))
+        @test result_dup.volumes ≈ [vl_dup, vv_dup]
+        @test maximum(abs.(sum(result_dup.fractions .* result_dup.compositions) .- z_dup)) < 1e-12
+    end
+
     @testset "Multiphase algorithm" begin
         #standard 3-phase system
         res1 = Clapeyron.tp_flash2(system, p, T, z, MultiPhaseTPFlash())
@@ -112,6 +141,41 @@
         system4 = EOS_CG(["carbon dioxide","water"])
         res4 = Clapeyron.tp_flash2(system4, 1e6, 293.15, [0.5,0.5], MultiPhaseTPFlash())
         @test res4.fractions ≈ [0.5025679516689612, 0.4974320483310388] rtol = 1e-6
+    end
+
+    @testset "Issue 664: pressure-consistent multiphase acceptance" begin
+        # Public reproducer: https://github.com/ClapeyronThermo/Clapeyron.jl/issues/664
+        model664 = PR(["carbon dioxide", "methane", "n-hexadecane", "water"];
+            userlocations = (; Tc = [304.21, 190.56, 717.00, 647.14],
+                Pc = [7.383e6, 4.599e6, 1.419e6, 22.064e6],
+                acentricfactor = [0.224, 0.011, 0.742, 0.344],
+                Mw = [44.01, 16.04, 226.44, 18.02],
+                k = [0.0 0.105 0.15 0.19; 0.105 0.0 0.05 0.50;
+                     0.15 0.05 0.0 0.50; 0.19 0.50 0.50 0.0]))
+        p664, T664, z664 = 5.0e6, 255.0, [0.45, 0.20, 0.20, 0.15]
+        g664(x) = gibbs_free_energy(model664, p664, T664, x) / sum(x)
+        lnf664(x) = log.(x .* fugacity_coefficient(model664, p664, T664, x))
+        # This known negative-TPD trial is used only to test the split helper and
+        # validate the final answer, never to initialize the multiphase flash.
+        trial664 = [0.869873335328373, 0.12921778683587917,
+                    0.000504592825716525, 0.00040428501003120877]
+        oil664 = [0.4843100904810624, 0.13604393773657125,
+                  0.3796045140389636, 4.14577434027901e-5]
+        split664 = Clapeyron.split_phase_tpd(model664, p664, T664,
+            oil664, trial664, :liquid, :liquid)
+        expected_delta664 = (sum(split664.fractions .* g664.(split664.compositions)) - g664(oil664)) /
+                            (Clapeyron.Rgas(model664)*T664)
+        @test split664.data.g < -1e-6
+        @test split664.data.g ≈ expected_delta664 atol = 1e-10
+        @test maximum(abs.(sum(split664.fractions .* split664.compositions) .- oil664)) < 1e-12
+        result664 = Clapeyron.tp_flash2(model664, p664, T664, z664,
+            MultiPhaseTPFlash(full_tpd = true))
+        @test length(result664.fractions) == 4
+        @test minimum(result664.fractions) > 0
+        @test maximum(abs.(sum(result664.fractions .* result664.compositions) .- z664)) < 1e-7
+        ref664 = lnf664(result664.compositions[1])
+        @test maximum(maximum(abs.(lnf664(x) .- ref664)) for x in result664.compositions) < 1e-6
+        @test sum(trial664 .* (lnf664(trial664) .- ref664)) > -1e-6
     end
 
     GC.gc()
